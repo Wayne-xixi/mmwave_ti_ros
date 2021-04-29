@@ -2,6 +2,8 @@
 #define _DATA_HANDLER_CLASS_
 
 #include <ti_mmwave_rospkg/RadarScan.h>
+#include <ti_mmwave_rospkg/RadarScanCluster.h>
+#include <ti_mmwave_rospkg/RadarScanTrack.h>
 #include "mmWave.h"
 #include <iostream>
 #include <cstdio>
@@ -18,6 +20,7 @@
 #include <pcl/io/pcd_io.h>
 #include <pcl/point_types.h>
 #include <visualization_msgs/Marker.h>
+#include <visualization_msgs/MarkerArray.h>
 #include <cmath>
 #define COUNT_SYNC_MAX 2
 
@@ -26,8 +29,8 @@ class DataUARTHandler{
 public:
     
     /*Constructor*/
-   //void DataUARTHandler(ros::NodeHandle* nh) : currentBufp(&pingPongBuffers[0]) , nextBufp(&pingPongBuffers[1]) {}
-    DataUARTHandler(ros::NodeHandle* nh);
+   //void DataUARTHandler(ros::NodeHandle* nh, char* myRadarBin) : currentBufp(&pingPongBuffers[0]) , nextBufp(&pingPongBuffers[1]) {}
+    DataUARTHandler(ros::NodeHandle* nh, char* myRadarBin);
     
     void setFrameID(char* myFrameID);
 
@@ -42,6 +45,9 @@ public:
     
     /*User callable function to set maxAllowedElevationAngleDeg*/
     void setMaxAllowedAzimuthAngleDeg(int myMaxAllowedAzimuthAngleDeg);
+    
+    /*User callable function to set radarBin*/
+    void setRadarBin(char* myRadarBin);
 
     void setNodeHandle(ros::NodeHandle* nh);
       
@@ -73,6 +79,19 @@ private:
     float max_vel;
     float vvel;
 
+    int nr_1;
+    int nd_1;
+    int ntx_1;
+    float fs_1;
+    float fc_1;
+    float BW_1;
+    float PRI_1;
+    float tfr_1;
+    float max_range_1;
+    float vrange_1;
+    float max_vel_1;
+    float vvel_1;
+
     char* frameID;
     /*Contains the name of the serial port*/
     char* dataSerialPort;
@@ -87,6 +106,9 @@ private:
     /*Contains the max_allowed_azimuth_angle_deg (points with azimuth angles 
       outside +/- max_allowed_azimuth_angle_deg will be removed)*/
     int maxAllowedAzimuthAngleDeg;
+
+    /*Radar binary specification for special cases handling*/
+    mmwRadarBin_t radarBin;
     
     /*Mutex protected variable which synchronizes threads*/
     int countSync;
@@ -135,7 +157,17 @@ private:
     ros::NodeHandle* nodeHandle;
     
     ros::Publisher DataUARTHandler_pub;
+    ros::Publisher DataUARTHandler_pub_1;
+    ros::Publisher DataUARTHandler_pub_2;
+    ros::Publisher DataUARTHandler_pub_3;
+    ros::Publisher DataUARTHandler_pub_4;
+    ros::Publisher DataUARTHandler_pub_5;
     ros::Publisher radar_scan_pub;
+    ros::Publisher radar_scan_pub_1;
+    ros::Publisher radar_scan_pub_2;
+    ros::Publisher radar_scan_pub_3;
+    ros::Publisher radar_scan_pub_4;
+    ros::Publisher radar_scan_pub_5;
     ros::Publisher marker_pub;
 };
 

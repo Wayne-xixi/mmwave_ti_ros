@@ -1,30 +1,159 @@
 #include <DataHandlerClass.h>
 
-DataUARTHandler::DataUARTHandler(ros::NodeHandle* nh) : currentBufp(&pingPongBuffers[0]) , nextBufp(&pingPongBuffers[1]) {
-    DataUARTHandler_pub = nh->advertise<sensor_msgs::PointCloud2>("/ti_mmwave/radar_scan_pcl", 100);
-    radar_scan_pub = nh->advertise<ti_mmwave_rospkg::RadarScan>("/ti_mmwave/radar_scan", 100);
+DataUARTHandler::DataUARTHandler(ros::NodeHandle* nh, char* myRadarBin) : currentBufp(&pingPongBuffers[0]) , nextBufp(&pingPongBuffers[1]) {
     marker_pub = nh->advertise<visualization_msgs::Marker>("/ti_mmwave/radar_scan_markers", 100);
     maxAllowedElevationAngleDeg = 90; // Use max angle if none specified
     maxAllowedAzimuthAngleDeg = 90; // Use max angle if none specified
 
-    // Wait for parameters
-    while(!nh->hasParam("/ti_mmwave/doppler_vel_resolution")){}
+    setRadarBin(myRadarBin);
 
-    nh->getParam("/ti_mmwave/numAdcSamples", nr);
-    nh->getParam("/ti_mmwave/numLoops", nd);
-    nh->getParam("/ti_mmwave/num_TX", ntx);
-    nh->getParam("/ti_mmwave/f_s", fs);
-    nh->getParam("/ti_mmwave/f_c", fc);
-    nh->getParam("/ti_mmwave/BW", BW);
-    nh->getParam("/ti_mmwave/PRI", PRI);
-    nh->getParam("/ti_mmwave/t_fr", tfr);
-    nh->getParam("/ti_mmwave/max_range", max_range);
-    nh->getParam("/ti_mmwave/range_resolution", vrange);
-    nh->getParam("/ti_mmwave/max_doppler_vel", max_vel);
-    nh->getParam("/ti_mmwave/doppler_vel_resolution", vvel);
+    if (radarBin == BIN_XWR18XX_MRR)
+    {
+        // Wait some time
+        ros::Duration(1).sleep();
 
-    ROS_INFO("\n\n==============================\nList of parameters\n==============================\nNumber of range samples: %d\nNumber of chirps: %d\nf_s: %.3f MHz\nf_c: %.3f GHz\nBandwidth: %.3f MHz\nPRI: %.3f us\nFrame time: %.3f ms\nMax range: %.3f m\nRange resolution: %.3f m\nMax Doppler: +-%.3f m/s\nDoppler resolution: %.3f m/s\n==============================\n", \
-        nr, nd, fs/1e6, fc/1e9, BW/1e6, PRI*1e6, tfr*1e3, max_range, vrange, max_vel/2, vvel);
+        // Plublisher for rviz MRR object
+        DataUARTHandler_pub = nh->advertise<sensor_msgs::PointCloud2>("/ti_mmwave/radar_object_mrr_rviz", 100);
+
+        // Plublisher for message MRR object
+        radar_scan_pub = nh->advertise<ti_mmwave_rospkg::RadarScan>("/ti_mmwave/radar_object_mrr", 100);
+
+        // Plublisher for rviz USRR object
+        DataUARTHandler_pub_1 = nh->advertise<sensor_msgs::PointCloud2>("/ti_mmwave/radar_object_usrr_rviz", 100);
+
+        // Plublisher for message USRR object
+        radar_scan_pub_1 = nh->advertise<ti_mmwave_rospkg::RadarScan>("/ti_mmwave/radar_object_usrr", 100);
+
+        // Publisher for rviz MRR cluster
+        DataUARTHandler_pub_2 = nh->advertise<visualization_msgs::MarkerArray>("/ti_mmwave/radar_cluster_mrr_rviz", 100);
+
+        // Plublisher for message MRR cluster
+        radar_scan_pub_2 = nh->advertise<ti_mmwave_rospkg::RadarScanCluster>("/ti_mmwave/radar_cluster_mrr", 100);
+
+        // Publisher for rviz USRR cluster
+        DataUARTHandler_pub_3 = nh->advertise<visualization_msgs::MarkerArray>("/ti_mmwave/radar_cluster_usrr_rviz", 100);
+
+        // Plublisher for message USRR cluster
+        radar_scan_pub_3 = nh->advertise<ti_mmwave_rospkg::RadarScanCluster>("/ti_mmwave/radar_cluster_usrr", 100);
+
+        // Publisher for rviz MRR track
+        DataUARTHandler_pub_4 = nh->advertise<visualization_msgs::MarkerArray>("/ti_mmwave/radar_track_mrr_rviz", 100);
+
+        // Plublisher for message MRR track
+        radar_scan_pub_4 = nh->advertise<ti_mmwave_rospkg::RadarScanTrack>("/ti_mmwave/radar_track_mrr", 100);
+
+        // Publisher for rviz USRR track
+        DataUARTHandler_pub_5 = nh->advertise<visualization_msgs::MarkerArray>("/ti_mmwave/radar_track_usrr_rviz", 100);
+
+        // Plublisher for message USRR track
+        radar_scan_pub_5 = nh->advertise<ti_mmwave_rospkg::RadarScanTrack>("/ti_mmwave/radar_track_usrr", 100);
+
+        // Parameters obtained from mrr_18xx_mss -> common -> cfg.c:
+        // Cfg_ProfileCfgInitParams, Cfg_AdvFrameCfgInitParams
+
+        // MRR120 profile configuration
+        float startFreq = 76.01;
+        float idleTime = 5.0;
+        float adcStartTime = 4.8;
+        float rampEndTime = 60.0;
+        float freqSlopeConst = 4.0;
+        float numAdcSamples = 256;
+        float digOutSampleRate = 4652;
+        float rxGain = 44;
+
+        // MRR120 frame configuration
+        float chirpStartIdx = 0;
+        float chirpEndIdx = 255;
+        float numLoops = 1;
+        float framePeriodicity = 30;
+
+        // MRR120 parameters
+        nr = numAdcSamples;
+        nd = numLoops;
+        ntx = chirpEndIdx - chirpStartIdx + 1;
+        fs = digOutSampleRate * 1e3;
+
+        // MRR120 intermediate parameters
+        float kf = freqSlopeConst * 1e12;
+        float adc_duration = nr / fs;
+        float c0 = 299792458;
+
+        // MRR120 parameters
+        fc = startFreq * 1e9 + kf * (adcStartTime * 1e-6 + adc_duration / 2);
+        BW = adc_duration * kf;
+        PRI = (idleTime + rampEndTime) * 1e-6;
+        tfr = framePeriodicity * 1e-3;
+        vrange = c0 / (2 * BW);
+        max_range = nr * vrange;
+        max_vel = c0 / (2 * fc * PRI) / ntx;
+        vvel = max_vel / nd;
+
+        // USRR30 profile configuration
+        float startFreq_1 = 77.01;
+        float idleTime_1 = 5.0;
+        float adcStartTime_1 = 3.0;
+        float rampEndTime_1 = 44.0;
+        float freqSlopeConst_1 = 56.25;
+        float numAdcSamples_1 = 512;
+        float digOutSampleRate_1 = 12500;
+        float rxGain_1 = 30;
+
+        // USRR30 frame configuration
+        float chirpStartIdx_1 = 256;
+        float chirpEndIdx_1 = 256;
+        float numLoops_1 = 32;
+        float framePeriodicity_1 = 30;
+
+        // USRR30 parameters
+        nr_1 = numAdcSamples_1;
+        nd_1 = numLoops_1;
+        ntx_1 = chirpEndIdx_1 - chirpStartIdx_1 + 1;
+        fs_1 = digOutSampleRate_1 * 1e3;
+
+        // USRR30 intermediate parameters
+        float kf_1 = freqSlopeConst_1 * 1e12;
+        float adc_duration_1 = nr_1 / fs_1;
+        float c0_1 = 299792458;
+
+        // USRR30 parameters
+        fc_1 = startFreq_1 * 1e9 + kf_1 * (adcStartTime_1 * 1e-6 + adc_duration_1 / 2);
+        BW_1 = adc_duration_1 * kf_1;
+        PRI_1 = (idleTime_1 + rampEndTime_1) * 1e-6;
+        tfr_1 = framePeriodicity_1 * 1e-3;
+        vrange_1 = c0_1 / (2 * BW_1);
+        max_range_1 = nr_1 * vrange_1;
+        max_vel_1 = c0_1 / (2 * fc_1 * PRI_1) / ntx_1;
+        vvel_1 = max_vel_1 / nd_1;
+
+        ROS_INFO("\n\n==============================\nList of MRR parameters\n==============================\nNumber of range samples: %d\nNumber of chirps: %d\nf_s: %.3f MHz\nf_c: %.3f GHz\nBandwidth: %.3f MHz\nPRI: %.3f us\nFrame time: %.3f ms\nMax range: %.3f m\nRange resolution: %.3f m\nMax Doppler: +-%.3f m/s\nDoppler resolution: %.3f m/s\n==============================\n", \
+            nr, nd, fs/1e6, fc/1e9, BW/1e6, PRI*1e6, tfr*1e3, max_range, vrange, max_vel/2, vvel);
+        ROS_INFO("\n\n==============================\nList of USRR parameters\n==============================\nNumber of range samples: %d\nNumber of chirps: %d\nf_s: %.3f MHz\nf_c: %.3f GHz\nBandwidth: %.3f MHz\nPRI: %.3f us\nFrame time: %.3f ms\nMax range: %.3f m\nRange resolution: %.3f m\nMax Doppler: +-%.3f m/s\nDoppler resolution: %.3f m/s\n==============================\n", \
+            nr_1, nd_1, fs_1/1e6, fc_1/1e9, BW_1/1e6, PRI_1*1e6, tfr_1*1e3, max_range_1, vrange_1, max_vel_1/2, vvel_1);
+    }
+    else
+    {
+        DataUARTHandler_pub = nh->advertise<sensor_msgs::PointCloud2>("/ti_mmwave/radar_scan_pcl", 100);
+        radar_scan_pub = nh->advertise<ti_mmwave_rospkg::RadarScan>("/ti_mmwave/radar_scan", 100);
+        
+        // Wait for parameters
+        while(!nh->hasParam("/ti_mmwave/doppler_vel_resolution")){}
+
+        nh->getParam("/ti_mmwave/numAdcSamples", nr);
+        nh->getParam("/ti_mmwave/numLoops", nd);
+        nh->getParam("/ti_mmwave/num_TX", ntx);
+        nh->getParam("/ti_mmwave/f_s", fs);
+        nh->getParam("/ti_mmwave/f_c", fc);
+        nh->getParam("/ti_mmwave/BW", BW);
+        nh->getParam("/ti_mmwave/PRI", PRI);
+        nh->getParam("/ti_mmwave/t_fr", tfr);
+        nh->getParam("/ti_mmwave/max_range", max_range);
+        nh->getParam("/ti_mmwave/range_resolution", vrange);
+        nh->getParam("/ti_mmwave/max_doppler_vel", max_vel);
+        nh->getParam("/ti_mmwave/doppler_vel_resolution", vvel);
+
+        ROS_INFO("\n\n==============================\nList of parameters\n==============================\nNumber of range samples: %d\nNumber of chirps: %d\nf_s: %.3f MHz\nf_c: %.3f GHz\nBandwidth: %.3f MHz\nPRI: %.3f us\nFrame time: %.3f ms\nMax range: %.3f m\nRange resolution: %.3f m\nMax Doppler: +-%.3f m/s\nDoppler resolution: %.3f m/s\n==============================\n", \
+            nr, nd, fs/1e6, fc/1e9, BW/1e6, PRI*1e6, tfr*1e3, max_range, vrange, max_vel/2, vvel);
+    }
 }
 
 void DataUARTHandler::setFrameID(char* myFrameID)
@@ -54,6 +183,19 @@ void DataUARTHandler::setMaxAllowedElevationAngleDeg(int myMaxAllowedElevationAn
 void DataUARTHandler::setMaxAllowedAzimuthAngleDeg(int myMaxAllowedAzimuthAngleDeg)
 {
     maxAllowedAzimuthAngleDeg = myMaxAllowedAzimuthAngleDeg;
+}
+    
+/*Implementation of setRadarBin*/
+void DataUARTHandler::setRadarBin(char* myRadarBin)
+{
+    if (strcmp(myRadarBin, "xwr18xx_mrr_demo.bin") == 0)
+    {
+        radarBin = BIN_XWR18XX_MRR;
+    }
+    else
+    {
+        radarBin = BIN_GENERIC;
+    }
 }
 
 /*Implementation of readIncomingData*/
@@ -240,8 +382,23 @@ void *DataUARTHandler::sortIncomingData( void )
     float maxElevationAngleRatioSquared;
     float maxAzimuthAngleRatio;
     
+    // Object point for rviz
     boost::shared_ptr<pcl::PointCloud<pcl::PointXYZI>> RScan(new pcl::PointCloud<pcl::PointXYZI>);
+
+    // Object topic
     ti_mmwave_rospkg::RadarScan radarscan;
+
+    // Cluster marker for rviz
+    boost::shared_ptr<visualization_msgs::MarkerArray> RScanClusterMarkerArray(new visualization_msgs::MarkerArray);
+
+    // Cluster topic
+    ti_mmwave_rospkg::RadarScanCluster radar_scan_cluster;
+
+    // Track marker for rviz
+    boost::shared_ptr<visualization_msgs::MarkerArray> RScanTrackMarkerArray(new visualization_msgs::MarkerArray);
+
+    // Track topic
+    ti_mmwave_rospkg::RadarScanTrack radar_scan_track;
 
     //wait for first packet to arrive
     pthread_mutex_lock(&countSync_mutex);
@@ -257,9 +414,12 @@ void *DataUARTHandler::sortIncomingData( void )
         {
             
         case READ_HEADER:
+            // ROS_INFO("DataUARTHandler Sort Thread : case READ_HEADER");
             
             //init variables
             mmwData.numObjOut = 0;
+            mmwData.numClusterOut = 0;
+            mmwData.numTrackOut = 0;
 
             //make sure packet has at least first three fields (12 bytes) before we read them (does not include magicWord since it was already removed)
             if(currentBufp->size() < 12)
@@ -396,7 +556,7 @@ void *DataUARTHandler::sortIncomingData( void )
                     memcpy( &mmwData.objOut.z, &currentBufp->at(currentDatap), sizeof(mmwData.objOut.z));
                     currentDatap += ( sizeof(mmwData.objOut.z) );
                     
-                    float temp[7];
+                    float temp[8];
                     
                     temp[0] = (float) mmwData.objOut.x;
                     temp[1] = (float) mmwData.objOut.y;
@@ -601,10 +761,436 @@ void *DataUARTHandler::sortIncomingData( void )
             }
             
             break;
+            
+        case READ_MRR_OBJ_STRUCT:
+            {
+                // Object type: mrr_18xx_dss -> dss_data_path.h: MmwDemo_detectedObjForTx
+                
+                // CHECK_TLV_TYPE code has already read tlvType and tlvLen
+
+                i = 0;
+
+                //get number of objects
+                memcpy( &mmwData.numObjOut, &currentBufp->at(currentDatap), sizeof(mmwData.numObjOut));
+                currentDatap += ( sizeof(mmwData.numObjOut) );
+                
+                // ROS_INFO("DataUARTHandler Sort Thread : case READ_MRR_OBJ_STRUCT, numObjOut = %u, subframe %d", mmwData.numObjOut, mmwData.header.subFrameNumber);
+            
+                //get xyzQFormat
+                memcpy( &mmwData.xyzQFormat, &currentBufp->at(currentDatap), sizeof(mmwData.xyzQFormat));
+                currentDatap += ( sizeof(mmwData.xyzQFormat) );
+                
+                // RScan->header.seq = 0;
+                // RScan->header.stamp = (uint64_t)(ros::Time::now());
+                // RScan->header.stamp = (uint32_t) mmwData.header.timeCpuCycles;
+                RScan->header.frame_id = frameID;
+                RScan->height = 1;
+                RScan->width = mmwData.numObjOut;
+                RScan->is_dense = 1;
+                RScan->points.resize(RScan->width * RScan->height);
+                
+                // Calculate ratios for max desired elevation and azimuth angles
+                if ((maxAllowedElevationAngleDeg >= 0) && (maxAllowedElevationAngleDeg < 90)) {
+                    maxElevationAngleRatioSquared = tan(maxAllowedElevationAngleDeg * M_PI / 180.0);
+                    maxElevationAngleRatioSquared = maxElevationAngleRatioSquared * maxElevationAngleRatioSquared;
+                } else maxElevationAngleRatioSquared = -1;
+                if ((maxAllowedAzimuthAngleDeg >= 0) && (maxAllowedAzimuthAngleDeg < 90)) maxAzimuthAngleRatio = tan(maxAllowedAzimuthAngleDeg * M_PI / 180.0);
+                else maxAzimuthAngleRatio = -1;
+
+                //ROS_INFO("maxElevationAngleRatioSquared = %f", maxElevationAngleRatioSquared);
+                //ROS_INFO("maxAzimuthAngleRatio = %f", maxAzimuthAngleRatio);
+                //ROS_INFO("mmwData.numObjOut before = %d", mmwData.numObjOut);
+
+                // Populate pointcloud
+                while( i < mmwData.numObjOut ) {
+                    //get object doppler index
+                    memcpy( &mmwData.objOut.dopplerIdx, &currentBufp->at(currentDatap), sizeof(mmwData.objOut.dopplerIdx));
+                    currentDatap += ( sizeof(mmwData.objOut.dopplerIdx) );
+                    
+                    //get object peak intensity value
+                    memcpy( &mmwData.objOut.peakVal, &currentBufp->at(currentDatap), sizeof(mmwData.objOut.peakVal));
+                    currentDatap += ( sizeof(mmwData.objOut.peakVal) );
+                    
+                    //get object x-coordinate
+                    memcpy( &mmwData.objOut.x, &currentBufp->at(currentDatap), sizeof(mmwData.objOut.x));
+                    currentDatap += ( sizeof(mmwData.objOut.x) );
+                    
+                    //get object y-coordinate
+                    memcpy( &mmwData.objOut.y, &currentBufp->at(currentDatap), sizeof(mmwData.objOut.y));
+                    currentDatap += ( sizeof(mmwData.objOut.y) );
+                    
+                    //get object z-coordinate
+                    memcpy( &mmwData.objOut.z, &currentBufp->at(currentDatap), sizeof(mmwData.objOut.z));
+                    currentDatap += ( sizeof(mmwData.objOut.z) );
+
+                    // Subframe selection
+                    float vvel_sel;
+                    float vrange_sel;
+                    float nd_sel;
+
+                    if (mmwData.header.subFrameNumber == 0)
+                    {
+                        vvel_sel = vvel;
+                        vrange_sel = vrange;
+                        nd_sel = nd;
+                    }
+                    else
+                    {
+                        vvel_sel = vvel_1;
+                        vrange_sel = vrange_1;
+                        nd_sel = nd_1;
+                    }
+                    
+                    // Scan data processing
+                    float temp[8];
+                    float invXyzQFormat = 1.0 / (pow(2 , mmwData.xyzQFormat));
+                    
+                    temp[0] = (float) mmwData.objOut.x;
+                    temp[1] = (float) mmwData.objOut.y;
+                    temp[2] = (float) mmwData.objOut.z;
+                    temp[3] = (float) mmwData.objOut.dopplerIdx;
+
+                    for (int j = 0; j < 4; j++) {
+                        if (temp[j] > 32767) temp[j] -= 65536;
+                        if (j < 3) temp[j] = temp[j] * invXyzQFormat;
+                    }
+                    
+                    temp[7] = temp[3] * vvel_sel;
+
+                    temp[4] = (float) mmwData.objOut.rangeIdx * vrange_sel;
+                    temp[5] = 10 * log10(mmwData.objOut.peakVal + 1);  // intensity
+                    temp[6] = std::atan2(-temp[0], temp[1]) / M_PI * 180;
+
+                    uint16_t tmp = (uint16_t)(temp[3] + nd_sel / 2);
+
+                    // Map mmWave sensor coordinates to ROS coordinate system
+                    RScan->points[i].x = temp[1];   // ROS standard coordinate system X-axis is forward which is the mmWave sensor Y-axis
+                    RScan->points[i].y = -temp[0];  // ROS standard coordinate system Y-axis is left which is the mmWave sensor -(X-axis)
+                    RScan->points[i].z = temp[2];   // ROS standard coordinate system Z-axis is up which is the same as mmWave sensor Z-axis
+                    RScan->points[i].intensity = temp[5];
+                    
+                    // Object message
+                    radarscan.header.frame_id = frameID;
+                    radarscan.header.stamp = ros::Time::now();
+                    radarscan.point_id = i;
+                    radarscan.x = temp[1];
+                    radarscan.y = -temp[0];
+                    radarscan.z = temp[2];
+                    radarscan.range = temp[4];
+                    radarscan.velocity = temp[7];
+                    radarscan.doppler_bin = tmp;
+                    radarscan.bearing = temp[6];
+                    radarscan.intensity = temp[5];
+
+                    if (((maxElevationAngleRatioSquared == -1) ||
+                                (((RScan->points[i].z * RScan->points[i].z) / (RScan->points[i].x * RScan->points[i].x +
+                                                                                RScan->points[i].y * RScan->points[i].y)
+                                ) < maxElevationAngleRatioSquared)
+                                ) &&
+                                ((maxAzimuthAngleRatio == -1) || (fabs(RScan->points[i].y / RScan->points[i].x) < maxAzimuthAngleRatio)) &&
+                                        (RScan->points[i].x != 0)
+                            )
+                    {
+                        if (mmwData.header.subFrameNumber == 1)
+                        {
+                            radar_scan_pub_1.publish(radarscan);
+                        }
+                        else
+                        {
+                            radar_scan_pub.publish(radarscan);
+                        }
+                    }
+                    i++;
+                }
+
+                sorterState = CHECK_TLV_TYPE;
+            }
+            
+            break;
+            
+        case READ_MRR_CLUSTER_STRUCT:
+            {
+                // Object type: mrr_18xx_dss -> dss_data_path.h: clusteringDBscanReportForTx
+
+                // CHECK_TLV_TYPE code has already read tlvType and tlvLen
+
+                i = 0;
+
+                //get number of objects
+                memcpy( &mmwData.numClusterOut, &currentBufp->at(currentDatap), sizeof(mmwData.numClusterOut));
+                currentDatap += ( sizeof(mmwData.numClusterOut) );
+
+                // ROS_INFO("DataUARTHandler Sort Thread : case READ_MRR_CLUSTER_STRUCT, numClusterOut = %u, subframe %d", mmwData.numClusterOut, mmwData.header.subFrameNumber);
+            
+                //get xyzQFormat
+                memcpy( &mmwData.xyzQFormat, &currentBufp->at(currentDatap), sizeof(mmwData.xyzQFormat));
+                currentDatap += ( sizeof(mmwData.xyzQFormat) );
+
+                // Get time stamp
+                ros::Time ts = ros::Time::now();
+                std::string cluster_ns;
+
+                if (mmwData.header.subFrameNumber == 0)
+                {
+                    cluster_ns = "cluster_0";
+                }
+                else
+                {
+                    cluster_ns = "cluster_1";
+                }
+
+                // Resize marker array
+                RScanClusterMarkerArray->markers.resize(mmwData.numClusterOut);
+                
+                // Populate pointcloud
+                while( i < mmwData.numClusterOut ){
+                    //get cluster x center
+                    memcpy( &mmwData.clusterOut.xCenter, &currentBufp->at(currentDatap), sizeof(mmwData.clusterOut.xCenter));
+                    currentDatap += ( sizeof(mmwData.clusterOut.xCenter) );
+
+                    //get cluster y center
+                    memcpy( &mmwData.clusterOut.yCenter, &currentBufp->at(currentDatap), sizeof(mmwData.clusterOut.yCenter));
+                    currentDatap += ( sizeof(mmwData.clusterOut.yCenter) );
+
+                    //get cluster x size
+                    memcpy( &mmwData.clusterOut.xSize, &currentBufp->at(currentDatap), sizeof(mmwData.clusterOut.xSize));
+                    currentDatap += ( sizeof(mmwData.clusterOut.xSize) );
+
+                    //get cluster y size
+                    memcpy( &mmwData.clusterOut.ySize, &currentBufp->at(currentDatap), sizeof(mmwData.clusterOut.ySize));
+                    currentDatap += ( sizeof(mmwData.clusterOut.ySize) );
+                    
+                    // Scan data processing
+                    float temp[4];
+                    float invXyzQFormat = 1.0 / (pow(2 , mmwData.xyzQFormat));
+                    
+                    temp[0] = (float) mmwData.clusterOut.xCenter;
+                    temp[1] = (float) mmwData.clusterOut.yCenter;
+                    temp[2] = (float) mmwData.clusterOut.xSize;
+                    temp[3] = (float) mmwData.clusterOut.ySize;
+
+                    for (int j = 0; j < 4; j++) {
+                        if (j < 2 && temp[j] > 32767) temp[j] -= 65536;
+                        temp[j] = temp[j] * invXyzQFormat;
+                    }
+
+                    // Cluster marker for rviz
+                    RScanClusterMarkerArray->markers[i].header.frame_id = frameID;
+                    RScanClusterMarkerArray->markers[i].header.stamp = ts;
+                    RScanClusterMarkerArray->markers[i].ns = cluster_ns;
+                    RScanClusterMarkerArray->markers[i].id = i;
+                    RScanClusterMarkerArray->markers[i].action = visualization_msgs::Marker::ADD;
+                    RScanClusterMarkerArray->markers[i].type = visualization_msgs::Marker::CUBE;
+                    RScanClusterMarkerArray->markers[i].lifetime = ros::Duration(1);
+                    RScanClusterMarkerArray->markers[i].pose.position.x = temp[1];
+                    RScanClusterMarkerArray->markers[i].pose.position.y = -temp[0];
+                    RScanClusterMarkerArray->markers[i].pose.position.z = 0.0;
+                    RScanClusterMarkerArray->markers[i].pose.orientation.x = 0.0;
+                    RScanClusterMarkerArray->markers[i].pose.orientation.y = 0.0;
+                    RScanClusterMarkerArray->markers[i].pose.orientation.z = 0.0;
+                    RScanClusterMarkerArray->markers[i].pose.orientation.w = 1.0;
+                    RScanClusterMarkerArray->markers[i].scale.x = temp[3];
+                    RScanClusterMarkerArray->markers[i].scale.y = temp[2];
+                    RScanClusterMarkerArray->markers[i].scale.z = 0.01;
+                    RScanClusterMarkerArray->markers[i].color.a = 1.0;
+                    if (mmwData.header.subFrameNumber == 0)
+                    {
+                        RScanClusterMarkerArray->markers[i].color.r = 0.0;
+                        RScanClusterMarkerArray->markers[i].color.g = 0.0;
+                        RScanClusterMarkerArray->markers[i].color.b = 1.0;
+                    }
+                    else
+                    {
+                        RScanClusterMarkerArray->markers[i].color.r = 0.0;
+                        RScanClusterMarkerArray->markers[i].color.g = 0.0;
+                        RScanClusterMarkerArray->markers[i].color.b = 0.5;
+                    }
+                    
+                    // Cluster message
+                    radar_scan_cluster.header.frame_id = frameID;
+                    radar_scan_cluster.header.stamp = ts;
+                    radar_scan_cluster.point_id = i;
+                    radar_scan_cluster.x = temp[1];
+                    radar_scan_cluster.y = -temp[0];
+                    radar_scan_cluster.x_size = temp[3];
+                    radar_scan_cluster.y_size = temp[2];
+
+                    if (mmwData.header.subFrameNumber == 1)
+                    {
+                        radar_scan_pub_3.publish(radar_scan_cluster);
+                    }
+                    else
+                    {
+                        radar_scan_pub_2.publish(radar_scan_cluster);
+                    }
+
+                    i++;
+                }
+
+                sorterState = CHECK_TLV_TYPE;
+            }
+
+            break;
+            
+        case READ_MRR_TRACKED_OBJ_STRUCT:
+            {
+                // Object type: mrr_18xx_dss -> dss_data_path.h: trackingReportForTx_t
+
+                // CHECK_TLV_TYPE code has already read tlvType and tlvLen
+
+                i = 0;
+
+                //get number of objects
+                memcpy( &mmwData.numTrackOut, &currentBufp->at(currentDatap), sizeof(mmwData.numTrackOut));
+                currentDatap += ( sizeof(mmwData.numTrackOut) );
+
+                // ROS_INFO("DataUARTHandler Sort Thread : case READ_MRR_TRACKED_OBJ_STRUCT, numTrackOut = %u, subframe %d", mmwData.numTrackOut, mmwData.header.subFrameNumber);
+            
+                //get xyzQFormat
+                memcpy( &mmwData.xyzQFormat, &currentBufp->at(currentDatap), sizeof(mmwData.xyzQFormat));
+                currentDatap += ( sizeof(mmwData.xyzQFormat) );
+
+                // Get time stamp
+                ros::Time ts = ros::Time::now();
+                std::string track_ns;
+
+                if (mmwData.header.subFrameNumber == 0)
+                {
+                    track_ns = "track_0";
+                }
+                else
+                {
+                    track_ns = "track_1";
+                }
+
+                // Resize marker array
+                RScanTrackMarkerArray->markers.resize(mmwData.numTrackOut);
+                
+                // Populate pointcloud
+                while( i < mmwData.numTrackOut ){
+                    //get track x center
+                    memcpy( &mmwData.trackOut.x, &currentBufp->at(currentDatap), sizeof(mmwData.trackOut.x));
+                    currentDatap += ( sizeof(mmwData.trackOut.x) );
+
+                    //get track y center
+                    memcpy( &mmwData.trackOut.y, &currentBufp->at(currentDatap), sizeof(mmwData.trackOut.y));
+                    currentDatap += ( sizeof(mmwData.trackOut.y) );
+
+                    //get track x velocity
+                    memcpy( &mmwData.trackOut.xVel, &currentBufp->at(currentDatap), sizeof(mmwData.trackOut.xVel));
+                    currentDatap += ( sizeof(mmwData.trackOut.xVel) );
+
+                    //get track y velocity
+                    memcpy( &mmwData.trackOut.yVel, &currentBufp->at(currentDatap), sizeof(mmwData.trackOut.yVel));
+                    currentDatap += ( sizeof(mmwData.trackOut.yVel) );
+
+                    //get track x size
+                    memcpy( &mmwData.trackOut.xSize, &currentBufp->at(currentDatap), sizeof(mmwData.trackOut.xSize));
+                    currentDatap += ( sizeof(mmwData.trackOut.xSize) );
+
+                    //get track y size
+                    memcpy( &mmwData.trackOut.ySize, &currentBufp->at(currentDatap), sizeof(mmwData.trackOut.ySize));
+                    currentDatap += ( sizeof(mmwData.trackOut.ySize) );
+                    
+                    // Scan data processing
+                    float temp[6];
+                    float invXyzQFormat = 1.0 / (pow(2 , mmwData.xyzQFormat));
+                    
+                    temp[0] = (float) mmwData.trackOut.x;
+                    temp[1] = (float) mmwData.trackOut.y;
+                    temp[2] = (float) mmwData.trackOut.xVel;
+                    temp[3] = (float) mmwData.trackOut.yVel;
+                    temp[4] = (float) mmwData.trackOut.xSize;
+                    temp[5] = (float) mmwData.trackOut.ySize;
+
+                    for (int j = 0; j < 6; j++) {
+                        if (j < 4 && temp[j] > 32767) temp[j] -= 65536;
+                        temp[j] = temp[j] * invXyzQFormat;
+                    }
+
+                    // Track marker for rviz
+                    RScanTrackMarkerArray->markers[i].header.frame_id = frameID;
+                    RScanTrackMarkerArray->markers[i].header.stamp = ts;
+                    RScanTrackMarkerArray->markers[i].ns = track_ns;
+                    RScanTrackMarkerArray->markers[i].id = i;
+                    RScanTrackMarkerArray->markers[i].action = visualization_msgs::Marker::ADD;
+                    RScanTrackMarkerArray->markers[i].type = visualization_msgs::Marker::CUBE;
+                    RScanTrackMarkerArray->markers[i].lifetime = ros::Duration(1);
+                    RScanTrackMarkerArray->markers[i].pose.position.x = temp[1];
+                    RScanTrackMarkerArray->markers[i].pose.position.y = -temp[0];
+                    RScanTrackMarkerArray->markers[i].pose.position.z = 0.0;
+                    RScanTrackMarkerArray->markers[i].pose.orientation.x = 0.0;
+                    RScanTrackMarkerArray->markers[i].pose.orientation.y = 0.0;
+                    RScanTrackMarkerArray->markers[i].pose.orientation.z = 0.0;
+                    RScanTrackMarkerArray->markers[i].pose.orientation.w = 1.0;
+                    RScanTrackMarkerArray->markers[i].scale.x = temp[5];
+                    RScanTrackMarkerArray->markers[i].scale.y = temp[4];
+                    RScanTrackMarkerArray->markers[i].scale.z = 0.01;
+                    RScanTrackMarkerArray->markers[i].color.a = 1.0;
+                    if (mmwData.header.subFrameNumber == 0)
+                    {
+                        RScanTrackMarkerArray->markers[i].color.r = 0.0;
+                        RScanTrackMarkerArray->markers[i].color.g = 1.0;
+                        RScanTrackMarkerArray->markers[i].color.b = 0.0;
+                    }
+                    else
+                    {
+                        RScanTrackMarkerArray->markers[i].color.r = 0.0;
+                        RScanTrackMarkerArray->markers[i].color.g = 0.5;
+                        RScanTrackMarkerArray->markers[i].color.b = 0.0;
+                    }
+                    
+                    // Cluster message
+                    radar_scan_track.header.frame_id = frameID;
+                    radar_scan_track.header.stamp = ts;
+                    radar_scan_track.point_id = i;
+                    radar_scan_track.x = temp[1];
+                    radar_scan_track.y = -temp[0];
+                    radar_scan_track.x_vel = temp[3];
+                    radar_scan_track.y_vel = temp[2];
+                    radar_scan_track.x_size = temp[5];
+                    radar_scan_track.y_size = temp[4];
+
+                    if (mmwData.header.subFrameNumber == 1)
+                    {
+                        radar_scan_pub_5.publish(radar_scan_track);
+                    }
+                    else
+                    {
+                        radar_scan_pub_4.publish(radar_scan_track);
+                    }
+
+                    i++;
+                }
+
+                sorterState = CHECK_TLV_TYPE;
+            }
+
+            break;
+
+            break;
+            
+        case READ_MRR_PARKING_STRUCT:
+            {
+                // ROS_INFO("DataUARTHandler Sort Thread : case READ_MRR_PARKING_STRUCT, tlvLen = %u, subframe %d", tlvLen, mmwData.header.subFrameNumber);
+                
+                i = 0;
+                
+                while (i++ < tlvLen - 1)
+                {
+                    // ROS_INFO("DataUARTHandler Sort Thread : Parsing Parking i=%d, tlvLen = %u, subframe %d", i, tlvLen, mmwData.header.subFrameNumber);
+                }
+                
+                currentDatap += tlvLen;
+                
+                sorterState = CHECK_TLV_TYPE;
+            }
+
+            break;
         
         case CHECK_TLV_TYPE:
         
-            //ROS_INFO("DataUARTHandler Sort Thread : tlvCount = %d, numTLV = %d", tlvCount, mmwData.header.numTLVs);
+            // ROS_INFO("DataUARTHandler Sort Thread : case CHECK_TLV_TYPE, tlvCount = %d, numTLV = %d", tlvCount, mmwData.header.numTLVs);
         
             if(tlvCount++ >= mmwData.header.numTLVs)  // Done parsing all received TLV sections
             {
@@ -640,7 +1226,40 @@ void *DataUARTHandler::sortIncomingData( void )
                     //ROS_INFO("mmwData.numObjOut after = %d", mmwData.numObjOut);
                     //ROS_INFO("DataUARTHandler Sort Thread: number of obj = %d", mmwData.numObjOut );
                     
-                    DataUARTHandler_pub.publish(RScan);
+                    if ((radarBin == BIN_XWR18XX_MRR) && (mmwData.header.subFrameNumber == 1))
+                    {
+                        DataUARTHandler_pub_1.publish(RScan);
+                    }
+                    else
+                    {
+                        DataUARTHandler_pub.publish(RScan);
+                    }
+                }
+
+                // Publish detected cluster marker array
+                if ((radarBin == BIN_XWR18XX_MRR) && (mmwData.numClusterOut > 0))
+                {
+                    if (mmwData.header.subFrameNumber == 1)
+                    {
+                        DataUARTHandler_pub_3.publish(RScanClusterMarkerArray);
+                    }
+                    else
+                    {
+                        DataUARTHandler_pub_2.publish(RScanClusterMarkerArray);
+                    }
+                }
+
+                // Publish detected track marker array
+                if ((radarBin == BIN_XWR18XX_MRR) && (mmwData.numTrackOut > 0))
+                {
+                    if (mmwData.header.subFrameNumber == 1)
+                    {
+                        DataUARTHandler_pub_5.publish(RScanTrackMarkerArray);
+                    }
+                    else
+                    {
+                        DataUARTHandler_pub_4.publish(RScanTrackMarkerArray);
+                    }
                 }
 
                 //ROS_INFO("DataUARTHandler Sort Thread : CHECK_TLV_TYPE state says tlvCount max was reached, going to switch buffer state");
@@ -663,53 +1282,83 @@ void *DataUARTHandler::sortIncomingData( void )
                 
                 //ROS_INFO("DataUARTHandler Sort Thread : tlvType = %d, tlvLen = %d", (int) tlvType, tlvLen);
             
-                switch(tlvType)
+                if (radarBin == BIN_XWR18XX_MRR)
                 {
-                case MMWDEMO_OUTPUT_MSG_NULL:
-                
-                    break;
-                
-                case MMWDEMO_OUTPUT_MSG_DETECTED_POINTS:
-                    //ROS_INFO("DataUARTHandler Sort Thread : Object TLV");
-                    sorterState = READ_OBJ_STRUCT;
-                    break;
-                
-                case MMWDEMO_OUTPUT_MSG_RANGE_PROFILE:
-                    //ROS_INFO("DataUARTHandler Sort Thread : Range TLV");
-                    sorterState = READ_LOG_MAG_RANGE;
-                    break;
-                
-                case MMWDEMO_OUTPUT_MSG_NOISE_PROFILE:
-                    //ROS_INFO("DataUARTHandler Sort Thread : Noise TLV");
-                    sorterState = READ_NOISE;
-                    break;
-                
-                case MMWDEMO_OUTPUT_MSG_AZIMUTH_STATIC_HEAT_MAP:
-                    //ROS_INFO("DataUARTHandler Sort Thread : Azimuth Heat TLV");
-                    sorterState = READ_AZIMUTH;
-                    break;
-                
-                case MMWDEMO_OUTPUT_MSG_RANGE_DOPPLER_HEAT_MAP:
-                    //ROS_INFO("DataUARTHandler Sort Thread : R/D Heat TLV");
-                    sorterState = READ_DOPPLER;
-                    break;
-                
-                case MMWDEMO_OUTPUT_MSG_STATS:
-                    //ROS_INFO("DataUARTHandler Sort Thread : Stats TLV");
-                    sorterState = READ_STATS;
-                    break;
-                
-                case MMWDEMO_OUTPUT_MSG_DETECTED_POINTS_SIDE_INFO:
-                    //ROS_INFO("DataUARTHandler Sort Thread : Side info TLV");
-                    sorterState = READ_SIDE_INFO;
-                    break;
+                    switch(tlvType)
+                    {
+                    case MMWDEMO_OUTPUT_MSG_NULL:
+                    
+                        break;
+                    
+                    case MMWDEMO_OUTPUT_MSG_DETECTED_POINTS:
+                        sorterState = READ_MRR_OBJ_STRUCT;
+                        break;
+                    
+                    case MMWDEMO_OUTPUT_MSG_CLUSTERS:
+                        sorterState = READ_MRR_CLUSTER_STRUCT;
+                        break;
+                    
+                    case MMWDEMO_OUTPUT_MSG_TRACKED_OBJECTS:
+                        sorterState = READ_MRR_TRACKED_OBJ_STRUCT;
+                        break;
+                    
+                    case MMWDEMO_OUTPUT_MSG_PARKING_ASSIST:
+                        sorterState = READ_MRR_PARKING_STRUCT;
+                        break;
+                    
+                    default: break;
+                    }
+                }
+                else
+                {
+                    switch(tlvType)
+                    {
+                    case MMWDEMO_OUTPUT_MSG_NULL:
+                    
+                        break;
+                    
+                    case MMWDEMO_OUTPUT_MSG_DETECTED_POINTS:
+                        //ROS_INFO("DataUARTHandler Sort Thread : Object TLV");
+                        sorterState = READ_OBJ_STRUCT;
+                        break;
+                    
+                    case MMWDEMO_OUTPUT_MSG_RANGE_PROFILE:
+                        //ROS_INFO("DataUARTHandler Sort Thread : Range TLV");
+                        sorterState = READ_LOG_MAG_RANGE;
+                        break;
+                    
+                    case MMWDEMO_OUTPUT_MSG_NOISE_PROFILE:
+                        //ROS_INFO("DataUARTHandler Sort Thread : Noise TLV");
+                        sorterState = READ_NOISE;
+                        break;
+                    
+                    case MMWDEMO_OUTPUT_MSG_AZIMUTH_STATIC_HEAT_MAP:
+                        //ROS_INFO("DataUARTHandler Sort Thread : Azimuth Heat TLV");
+                        sorterState = READ_AZIMUTH;
+                        break;
+                    
+                    case MMWDEMO_OUTPUT_MSG_RANGE_DOPPLER_HEAT_MAP:
+                        //ROS_INFO("DataUARTHandler Sort Thread : R/D Heat TLV");
+                        sorterState = READ_DOPPLER;
+                        break;
+                    
+                    case MMWDEMO_OUTPUT_MSG_STATS:
+                        //ROS_INFO("DataUARTHandler Sort Thread : Stats TLV");
+                        sorterState = READ_STATS;
+                        break;
+                    
+                    case MMWDEMO_OUTPUT_MSG_DETECTED_POINTS_SIDE_INFO:
+                        //ROS_INFO("DataUARTHandler Sort Thread : Side info TLV");
+                        sorterState = READ_SIDE_INFO;
+                        break;
 
-                case MMWDEMO_OUTPUT_MSG_MAX:
-                    //ROS_INFO("DataUARTHandler Sort Thread : Header TLV");
-                    sorterState = READ_HEADER;
-                    break;
-                
-                default: break;
+                    case MMWDEMO_OUTPUT_MSG_MAX:
+                        //ROS_INFO("DataUARTHandler Sort Thread : Header TLV");
+                        sorterState = READ_HEADER;
+                        break;
+                    
+                    default: break;
+                    }
                 }
             }
             

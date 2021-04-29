@@ -74,10 +74,20 @@ enum MmwDemo_Output_TLV_Types
     /*! @brief   List of detected points side information */
     MMWDEMO_OUTPUT_MSG_DETECTED_POINTS_SIDE_INFO,
 
-    MMWDEMO_OUTPUT_MSG_MAX
+    MMWDEMO_OUTPUT_MSG_MAX,
+
+    /*! @brief   List of detected clusters */
+    MMWDEMO_OUTPUT_MSG_CLUSTERS = 2,
+
+    /*! @brief   List of tracked objects */
+    MMWDEMO_OUTPUT_MSG_TRACKED_OBJECTS = 3,
+
+    /*! @brief   Parking assistant data */
+    MMWDEMO_OUTPUT_MSG_PARKING_ASSIST = 4,
 };
 
-enum SorterState{ READ_HEADER, 
+enum SorterState{
+    READ_HEADER, 
     CHECK_TLV_TYPE,
     READ_OBJ_STRUCT, 
     READ_LOG_MAG_RANGE, 
@@ -86,7 +96,12 @@ enum SorterState{ READ_HEADER,
     READ_DOPPLER, 
     READ_STATS,
     SWAP_BUFFERS,
-    READ_SIDE_INFO};
+    READ_SIDE_INFO,
+    READ_MRR_OBJ_STRUCT,
+    READ_MRR_CLUSTER_STRUCT,
+    READ_MRR_TRACKED_OBJ_STRUCT,
+    READ_MRR_PARKING_STRUCT,
+};
 
 struct MmwDemo_output_message_header_t
     {
@@ -124,6 +139,26 @@ struct MmwDemo_DetectedObj
         int16_t  x;             /*!< @brief x - coordinate in meters. Q format depends on the range resolution */
         int16_t  y;             /*!< @brief y - coordinate in meters. Q format depends on the range resolution */
         int16_t  z;             /*!< @brief z - coordinate in meters. Q format depends on the range resolution */
+    };
+
+// Detected cluster structure for xwr18xx_mrr_demo.bin
+struct MmwDemo_DetectedCluster
+    {
+        int16_t  xCenter;       /*!< @brief x - coordinate in meters. Q format depends on the range resolution */
+        int16_t  yCenter;       /*!< @brief y - coordinate in meters. Q format depends on the range resolution */
+        int16_t  xSize;         /*!< @brief x - size in meters. Q format depends on the range resolution */
+        int16_t  ySize;         /*!< @brief y - size in meters. Q format depends on the range resolution */
+    };
+
+// Detected track structure for xwr18xx_mrr_demo.bin
+struct MmwDemo_DetectedTrack
+    {
+        int16_t  x;             /*!< @brief x - coordinate in meters. Q format depends on the range resolution */
+        int16_t  y;             /*!< @brief y - coordinate in meters. Q format depends on the range resolution */
+        int16_t  xVel;          /*!< @brief x - velocity in meters per second. Q format depends on the range resolution */
+        int16_t  yVel;          /*!< @brief y - velocity in meters per second. Q format depends on the range resolution */
+        int16_t  xSize;         /*!< @brief x - size in meters. Q format depends on the range resolution */
+        int16_t  ySize;         /*!< @brief y - size in meters. Q format depends on the range resolution */
     };
     
 // Detected object structures for mmWave SDK 3.x (DPIF_PointCloudCartesian_t and DPIF_PointCloudSideInfo_t)
@@ -168,14 +203,23 @@ int16_t noise;
 struct mmwDataPacket{
 MmwDemo_output_message_header_t header;
 uint16_t numObjOut;
+uint16_t numClusterOut;
+uint16_t numTrackOut;
 uint16_t xyzQFormat; // only used for SDK 1.x and 2.x
 MmwDemo_DetectedObj objOut; // only used for SDK 1.x and 2.x
+MmwDemo_DetectedCluster clusterOut; // only used for xwr18xx_mrr_demo.bin
+MmwDemo_DetectedTrack trackOut; // only used for xwr18xx_mrr_demo.bin
 
 DPIF_PointCloudCartesian_t newObjOut; // used for SDK 3.x
 DPIF_PointCloudSideInfo_t sideInfo; // used for SDK 3.x
 };
 
 const uint8_t magicWord[8] = {2, 1, 4, 3, 6, 5, 8, 7};
+
+typedef enum{
+    BIN_GENERIC = 0,
+    BIN_XWR18XX_MRR,
+} mmwRadarBin_t;
 
 #endif
 
