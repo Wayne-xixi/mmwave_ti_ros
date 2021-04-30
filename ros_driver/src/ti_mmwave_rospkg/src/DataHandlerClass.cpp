@@ -100,7 +100,7 @@ DataUARTHandler::DataUARTHandler(ros::NodeHandle* nh, char* myRadarBin) : curren
 
         // USRR30 frame configuration
         float chirpStartIdx_1 = 256;
-        float chirpEndIdx_1 = 256;
+        float chirpEndIdx_1 = 258;
         float numLoops_1 = 32;
         float framePeriodicity_1 = 30;
 
@@ -803,7 +803,10 @@ void *DataUARTHandler::sortIncomingData( void )
 
                 // Populate pointcloud
                 while( i < mmwData.numObjOut ) {
-                    //get object doppler index
+                    //get object range index (not used)
+                    mmwData.objOut.rangeIdx = 0;
+
+                    //get object doppler index. Relative velocity (m/s in oneQformat)
                     memcpy( &mmwData.objOut.dopplerIdx, &currentBufp->at(currentDatap), sizeof(mmwData.objOut.dopplerIdx));
                     currentDatap += ( sizeof(mmwData.objOut.dopplerIdx) );
                     
@@ -811,38 +814,20 @@ void *DataUARTHandler::sortIncomingData( void )
                     memcpy( &mmwData.objOut.peakVal, &currentBufp->at(currentDatap), sizeof(mmwData.objOut.peakVal));
                     currentDatap += ( sizeof(mmwData.objOut.peakVal) );
                     
-                    //get object x-coordinate
+                    //get object x-coordinate (meters in oneQformat)
                     memcpy( &mmwData.objOut.x, &currentBufp->at(currentDatap), sizeof(mmwData.objOut.x));
                     currentDatap += ( sizeof(mmwData.objOut.x) );
                     
-                    //get object y-coordinate
+                    //get object y-coordinate (meters in oneQformat)
                     memcpy( &mmwData.objOut.y, &currentBufp->at(currentDatap), sizeof(mmwData.objOut.y));
                     currentDatap += ( sizeof(mmwData.objOut.y) );
                     
-                    //get object z-coordinate
+                    //get object z-coordinate (meters in oneQformat)
                     memcpy( &mmwData.objOut.z, &currentBufp->at(currentDatap), sizeof(mmwData.objOut.z));
                     currentDatap += ( sizeof(mmwData.objOut.z) );
-
-                    // Subframe selection
-                    float vvel_sel;
-                    float vrange_sel;
-                    float nd_sel;
-
-                    if (mmwData.header.subFrameNumber == 0)
-                    {
-                        vvel_sel = vvel;
-                        vrange_sel = vrange;
-                        nd_sel = nd;
-                    }
-                    else
-                    {
-                        vvel_sel = vvel_1;
-                        vrange_sel = vrange_1;
-                        nd_sel = nd_1;
-                    }
                     
                     // Scan data processing
-                    float temp[8];
+                    float temp[7];
                     float invXyzQFormat = 1.0 / (pow(2 , mmwData.xyzQFormat));
                     
                     temp[0] = (float) mmwData.objOut.x;
@@ -850,18 +835,15 @@ void *DataUARTHandler::sortIncomingData( void )
                     temp[2] = (float) mmwData.objOut.z;
                     temp[3] = (float) mmwData.objOut.dopplerIdx;
 
+                    // Convert from oneQformat to float
                     for (int j = 0; j < 4; j++) {
                         if (temp[j] > 32767) temp[j] -= 65536;
-                        if (j < 3) temp[j] = temp[j] * invXyzQFormat;
+                        temp[j] = temp[j] * invXyzQFormat;
                     }
-                    
-                    temp[7] = temp[3] * vvel_sel;
 
-                    temp[4] = (float) mmwData.objOut.rangeIdx * vrange_sel;
+                    temp[4] = sqrt(temp[0] * temp[0] + temp[1] * temp[1] + temp[2] * temp[2]);
                     temp[5] = 10 * log10(mmwData.objOut.peakVal + 1);  // intensity
                     temp[6] = std::atan2(-temp[0], temp[1]) / M_PI * 180;
-
-                    uint16_t tmp = (uint16_t)(temp[3] + nd_sel / 2);
 
                     // Map mmWave sensor coordinates to ROS coordinate system
                     RScan->points[i].x = temp[1];   // ROS standard coordinate system X-axis is forward which is the mmWave sensor Y-axis
@@ -877,8 +859,8 @@ void *DataUARTHandler::sortIncomingData( void )
                     radarscan.y = -temp[0];
                     radarscan.z = temp[2];
                     radarscan.range = temp[4];
-                    radarscan.velocity = temp[7];
-                    radarscan.doppler_bin = tmp;
+                    radarscan.velocity = temp[3];
+                    radarscan.doppler_bin = 0;      // Can't be obtained
                     radarscan.bearing = temp[6];
                     radarscan.intensity = temp[5];
 

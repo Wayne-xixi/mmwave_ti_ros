@@ -66,6 +66,6 @@ Description:
 		x_size: 8.650390625       # Tracking size x coordinates in m
 		y_size: 6.92578125        # Tracking size y coordinates in m
 - The following topics are used by the driver to send data to rviz:
-	- /ti_mmwave/radar_object_mrr and /ti_mmwave/radar_object_usrr: Point cloud of detected objects in MRR and USRR modes.
-	- /ti_mmwave/radar_cluster_mrr and /ti_mmwave/radar_cluster_usrr: Marker array of detected clusters in MRR and USRR modes.
-	- /ti_mmwave/radar_track_mrr and /ti_mmwave/radar_track_usrr: Marker array of detected tracked objects in MRR and USRR modes.
+	- /ti_mmwave/radar_object_mrr_rviz and /ti_mmwave/radar_object_usrr_rviz: Point cloud of detected objects in MRR and USRR modes.
+	- /ti_mmwave/radar_cluster_mrr_rviz and /ti_mmwave/radar_cluster_usrr_rviz: Marker array of detected clusters in MRR and USRR modes.
+	- /ti_mmwave/radar_track_mrr_rviz and /ti_mmwave/radar_track_usrr_rviz: Marker array of detected tracked objects in MRR and USRR modes.
