@@ -2,8 +2,8 @@
 #define _DATA_HANDLER_CLASS_
 
 #include <ti_mmwave_rospkg/RadarScan.h>
-#include <ti_mmwave_rospkg/RadarScanCluster.h>
-#include <ti_mmwave_rospkg/RadarScanTrack.h>
+#include <radar_msgs/RadarDetectionArray.h>
+#include <radar_msgs/RadarTrackArray.h>
 #include "mmWave.h"
 #include <iostream>
 #include <cstdio>
@@ -160,14 +160,10 @@ private:
     ros::Publisher DataUARTHandler_pub_1;
     ros::Publisher DataUARTHandler_pub_2;
     ros::Publisher DataUARTHandler_pub_3;
-    ros::Publisher DataUARTHandler_pub_4;
-    ros::Publisher DataUARTHandler_pub_5;
     ros::Publisher radar_scan_pub;
     ros::Publisher radar_scan_pub_1;
     ros::Publisher radar_scan_pub_2;
     ros::Publisher radar_scan_pub_3;
-    ros::Publisher radar_scan_pub_4;
-    ros::Publisher radar_scan_pub_5;
     ros::Publisher marker_pub;
 };
 

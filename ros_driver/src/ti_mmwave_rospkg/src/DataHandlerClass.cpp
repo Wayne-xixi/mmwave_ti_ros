@@ -12,41 +12,29 @@ DataUARTHandler::DataUARTHandler(ros::NodeHandle* nh, char* myRadarBin) : curren
         // Wait some time
         ros::Duration(1).sleep();
 
-        // Plublisher for rviz MRR object
-        DataUARTHandler_pub = nh->advertise<sensor_msgs::PointCloud2>("/ti_mmwave/radar_object_mrr_rviz", 100);
+        // Plublisher for rviz MRR detection
+        DataUARTHandler_pub = nh->advertise<sensor_msgs::PointCloud2>("/ti_mmwave/radar_detection_mrr_rviz", 100);
 
-        // Plublisher for message MRR object
-        radar_scan_pub = nh->advertise<ti_mmwave_rospkg::RadarScan>("/ti_mmwave/radar_object_mrr", 100);
+        // Plublisher for message MRR detection
+        radar_scan_pub = nh->advertise<radar_msgs::RadarDetectionArray>("/ti_mmwave/radar_detection_mrr", 100);
 
-        // Plublisher for rviz USRR object
-        DataUARTHandler_pub_1 = nh->advertise<sensor_msgs::PointCloud2>("/ti_mmwave/radar_object_usrr_rviz", 100);
+        // Plublisher for rviz USRR detection
+        DataUARTHandler_pub_1 = nh->advertise<sensor_msgs::PointCloud2>("/ti_mmwave/radar_detection_usrr_rviz", 100);
 
-        // Plublisher for message USRR object
-        radar_scan_pub_1 = nh->advertise<ti_mmwave_rospkg::RadarScan>("/ti_mmwave/radar_object_usrr", 100);
-
-        // Publisher for rviz MRR cluster
-        DataUARTHandler_pub_2 = nh->advertise<visualization_msgs::MarkerArray>("/ti_mmwave/radar_cluster_mrr_rviz", 100);
-
-        // Plublisher for message MRR cluster
-        radar_scan_pub_2 = nh->advertise<ti_mmwave_rospkg::RadarScanCluster>("/ti_mmwave/radar_cluster_mrr", 100);
-
-        // Publisher for rviz USRR cluster
-        DataUARTHandler_pub_3 = nh->advertise<visualization_msgs::MarkerArray>("/ti_mmwave/radar_cluster_usrr_rviz", 100);
-
-        // Plublisher for message USRR cluster
-        radar_scan_pub_3 = nh->advertise<ti_mmwave_rospkg::RadarScanCluster>("/ti_mmwave/radar_cluster_usrr", 100);
+        // Plublisher for message USRR detection
+        radar_scan_pub_1 = nh->advertise<radar_msgs::RadarDetectionArray>("/ti_mmwave/radar_detection_usrr", 100);
 
         // Publisher for rviz MRR track
-        DataUARTHandler_pub_4 = nh->advertise<visualization_msgs::MarkerArray>("/ti_mmwave/radar_track_mrr_rviz", 100);
+        DataUARTHandler_pub_2 = nh->advertise<visualization_msgs::MarkerArray>("/ti_mmwave/radar_track_mrr_rviz", 100);
 
         // Plublisher for message MRR track
-        radar_scan_pub_4 = nh->advertise<ti_mmwave_rospkg::RadarScanTrack>("/ti_mmwave/radar_track_mrr", 100);
+        radar_scan_pub_2 = nh->advertise<radar_msgs::RadarTrackArray>("/ti_mmwave/radar_track_mrr", 100);
 
         // Publisher for rviz USRR track
-        DataUARTHandler_pub_5 = nh->advertise<visualization_msgs::MarkerArray>("/ti_mmwave/radar_track_usrr_rviz", 100);
+        DataUARTHandler_pub_3 = nh->advertise<visualization_msgs::MarkerArray>("/ti_mmwave/radar_track_usrr_rviz", 100);
 
         // Plublisher for message USRR track
-        radar_scan_pub_5 = nh->advertise<ti_mmwave_rospkg::RadarScanTrack>("/ti_mmwave/radar_track_usrr", 100);
+        radar_scan_pub_3 = nh->advertise<radar_msgs::RadarTrackArray>("/ti_mmwave/radar_track_usrr", 100);
 
         // Parameters obtained from mrr_18xx_mss -> common -> cfg.c:
         // Cfg_ProfileCfgInitParams, Cfg_AdvFrameCfgInitParams
@@ -381,24 +369,27 @@ void *DataUARTHandler::sortIncomingData( void )
     int j = 0;
     float maxElevationAngleRatioSquared;
     float maxAzimuthAngleRatio;
-    
-    // Object point for rviz
+
     boost::shared_ptr<pcl::PointCloud<pcl::PointXYZI>> RScan(new pcl::PointCloud<pcl::PointXYZI>);
-
-    // Object topic
     ti_mmwave_rospkg::RadarScan radarscan;
+    
+    // Detection (object) point for rviz
+    boost::shared_ptr<pcl::PointCloud<pcl::PointXYZI>> RScanObjectRviz(new pcl::PointCloud<pcl::PointXYZI>);
 
-    // Cluster marker for rviz
-    boost::shared_ptr<visualization_msgs::MarkerArray> RScanClusterMarkerArray(new visualization_msgs::MarkerArray);
+    // Detection (object) standard message
+    boost::shared_ptr<radar_msgs::RadarDetectionArray> RScanObjectStd(new radar_msgs::RadarDetectionArray);
 
-    // Cluster topic
-    ti_mmwave_rospkg::RadarScanCluster radar_scan_cluster;
+    // USRR track (cluster) marker for rviz
+    boost::shared_ptr<visualization_msgs::MarkerArray> RScanClusterRviz(new visualization_msgs::MarkerArray);
 
-    // Track marker for rviz
-    boost::shared_ptr<visualization_msgs::MarkerArray> RScanTrackMarkerArray(new visualization_msgs::MarkerArray);
+    // USRR track (cluster) standard message
+    boost::shared_ptr<radar_msgs::RadarTrackArray> RScanClusterStd(new radar_msgs::RadarTrackArray);
 
-    // Track topic
-    ti_mmwave_rospkg::RadarScanTrack radar_scan_track;
+    // MRR track (tracked object) marker for rviz
+    boost::shared_ptr<visualization_msgs::MarkerArray> RScanTrackRviz(new visualization_msgs::MarkerArray);
+
+    // MRR track (tracked object) standard message
+    boost::shared_ptr<radar_msgs::RadarTrackArray> RScanTrackStd(new radar_msgs::RadarTrackArray);
 
     //wait for first packet to arrive
     pthread_mutex_lock(&countSync_mutex);
@@ -780,26 +771,18 @@ void *DataUARTHandler::sortIncomingData( void )
                 memcpy( &mmwData.xyzQFormat, &currentBufp->at(currentDatap), sizeof(mmwData.xyzQFormat));
                 currentDatap += ( sizeof(mmwData.xyzQFormat) );
                 
-                // RScan->header.seq = 0;
-                // RScan->header.stamp = (uint64_t)(ros::Time::now());
-                // RScan->header.stamp = (uint32_t) mmwData.header.timeCpuCycles;
-                RScan->header.frame_id = frameID;
-                RScan->height = 1;
-                RScan->width = mmwData.numObjOut;
-                RScan->is_dense = 1;
-                RScan->points.resize(RScan->width * RScan->height);
+                // Detection (object) rviz message
+                RScanObjectRviz->header.frame_id = frameID;
+                RScanObjectRviz->height = 1;
+                RScanObjectRviz->width = mmwData.numObjOut;
+                RScanObjectRviz->is_dense = 1;
+                RScanObjectRviz->points.resize(mmwData.numObjOut);
                 
-                // Calculate ratios for max desired elevation and azimuth angles
-                if ((maxAllowedElevationAngleDeg >= 0) && (maxAllowedElevationAngleDeg < 90)) {
-                    maxElevationAngleRatioSquared = tan(maxAllowedElevationAngleDeg * M_PI / 180.0);
-                    maxElevationAngleRatioSquared = maxElevationAngleRatioSquared * maxElevationAngleRatioSquared;
-                } else maxElevationAngleRatioSquared = -1;
-                if ((maxAllowedAzimuthAngleDeg >= 0) && (maxAllowedAzimuthAngleDeg < 90)) maxAzimuthAngleRatio = tan(maxAllowedAzimuthAngleDeg * M_PI / 180.0);
-                else maxAzimuthAngleRatio = -1;
-
-                //ROS_INFO("maxElevationAngleRatioSquared = %f", maxElevationAngleRatioSquared);
-                //ROS_INFO("maxAzimuthAngleRatio = %f", maxAzimuthAngleRatio);
-                //ROS_INFO("mmwData.numObjOut before = %d", mmwData.numObjOut);
+                // Detection (object) standard message
+                RScanObjectStd->header.seq = 0;
+                RScanObjectStd->header.stamp = ros::Time::now();
+                RScanObjectStd->header.frame_id = frameID;
+                RScanObjectStd->detections.resize(mmwData.numObjOut);
 
                 // Populate pointcloud
                 while( i < mmwData.numObjOut ) {
@@ -827,12 +810,15 @@ void *DataUARTHandler::sortIncomingData( void )
                     currentDatap += ( sizeof(mmwData.objOut.z) );
                     
                     // Scan data processing
-                    float temp[7];
+                    float temp[9];
                     float invXyzQFormat = 1.0 / (pow(2 , mmwData.xyzQFormat));
                     
+                    // Position
                     temp[0] = (float) mmwData.objOut.x;
                     temp[1] = (float) mmwData.objOut.y;
                     temp[2] = (float) mmwData.objOut.z;
+                    
+                    // Speed
                     temp[3] = (float) mmwData.objOut.dopplerIdx;
 
                     // Convert from oneQformat to float
@@ -841,47 +827,45 @@ void *DataUARTHandler::sortIncomingData( void )
                         temp[j] = temp[j] * invXyzQFormat;
                     }
 
+                    // Range
                     temp[4] = sqrt(temp[0] * temp[0] + temp[1] * temp[1] + temp[2] * temp[2]);
-                    temp[5] = 10 * log10(mmwData.objOut.peakVal + 1);  // intensity
-                    temp[6] = std::atan2(-temp[0], temp[1]) / M_PI * 180;
 
-                    // Map mmWave sensor coordinates to ROS coordinate system
-                    RScan->points[i].x = temp[1];   // ROS standard coordinate system X-axis is forward which is the mmWave sensor Y-axis
-                    RScan->points[i].y = -temp[0];  // ROS standard coordinate system Y-axis is left which is the mmWave sensor -(X-axis)
-                    RScan->points[i].z = temp[2];   // ROS standard coordinate system Z-axis is up which is the same as mmWave sensor Z-axis
-                    RScan->points[i].intensity = temp[5];
-                    
-                    // Object message
-                    radarscan.header.frame_id = frameID;
-                    radarscan.header.stamp = ros::Time::now();
-                    radarscan.point_id = i;
-                    radarscan.x = temp[1];
-                    radarscan.y = -temp[0];
-                    radarscan.z = temp[2];
-                    radarscan.range = temp[4];
-                    radarscan.velocity = temp[3];
-                    radarscan.doppler_bin = 0;      // Can't be obtained
-                    radarscan.bearing = temp[6];
-                    radarscan.intensity = temp[5];
+                    // Intensity
+                    temp[5] = 10 * log10(mmwData.objOut.peakVal + 1);
 
-                    if (((maxElevationAngleRatioSquared == -1) ||
-                                (((RScan->points[i].z * RScan->points[i].z) / (RScan->points[i].x * RScan->points[i].x +
-                                                                                RScan->points[i].y * RScan->points[i].y)
-                                ) < maxElevationAngleRatioSquared)
-                                ) &&
-                                ((maxAzimuthAngleRatio == -1) || (fabs(RScan->points[i].y / RScan->points[i].x) < maxAzimuthAngleRatio)) &&
-                                        (RScan->points[i].x != 0)
-                            )
+                    // Bearing
+                    float angle = std::atan2(-temp[0], temp[1]);
+                    temp[6] = angle / M_PI * 180;
+
+                    // Range rate vetor
+                    if (temp[3] >= 0.0)
                     {
-                        if (mmwData.header.subFrameNumber == 1)
-                        {
-                            radar_scan_pub_1.publish(radarscan);
-                        }
-                        else
-                        {
-                            radar_scan_pub.publish(radarscan);
-                        }
+                        temp[7] = temp[3] * std::cos(angle);
+                        temp[8] = temp[3] * std::sin(angle);
                     }
+                    else
+                    {
+                        angle += M_PI;
+                        temp[7] = (-1.0 * temp[3]) * std::cos(angle);
+                        temp[8] = (-1.0 * temp[3]) * std::sin(angle);
+                    }
+
+                    // Detection (object) rviz message
+                    RScanObjectRviz->points[i].x = temp[1];   // ROS standard coordinate system X-axis is forward which is the mmWave sensor Y-axis
+                    RScanObjectRviz->points[i].y = -temp[0];  // ROS standard coordinate system Y-axis is left which is the mmWave sensor -(X-axis)
+                    RScanObjectRviz->points[i].z = temp[2];   // ROS standard coordinate system Z-axis is up which is the same as mmWave sensor Z-axis
+                    RScanObjectRviz->points[i].intensity = temp[5];
+
+                    // Detection (object) standard message
+                    RScanObjectStd->detections[i].detection_id = i;
+                    RScanObjectStd->detections[i].position.x = temp[1];
+                    RScanObjectStd->detections[i].position.y = -temp[0];
+                    RScanObjectStd->detections[i].position.z = 0.0;
+                    RScanObjectStd->detections[i].velocity.x = temp[7];
+                    RScanObjectStd->detections[i].velocity.y = temp[8];
+                    RScanObjectStd->detections[i].velocity.z = 0.0;
+                    RScanObjectStd->detections[i].amplitude = temp[5];
+
                     i++;
                 }
 
@@ -921,8 +905,14 @@ void *DataUARTHandler::sortIncomingData( void )
                     cluster_ns = "cluster_1";
                 }
 
-                // Resize marker array
-                RScanClusterMarkerArray->markers.resize(mmwData.numClusterOut);
+                // Track (cluster) rviz message
+                RScanClusterRviz->markers.resize(mmwData.numClusterOut);
+                
+                // Track (cluster) standard message
+                RScanClusterStd->header.seq = 0;
+                RScanClusterStd->header.stamp = ros::Time::now();
+                RScanClusterStd->header.frame_id = frameID;
+                RScanClusterStd->tracks.resize(mmwData.numClusterOut);
                 
                 // Populate pointcloud
                 while( i < mmwData.numClusterOut ){
@@ -956,55 +946,56 @@ void *DataUARTHandler::sortIncomingData( void )
                         temp[j] = temp[j] * invXyzQFormat;
                     }
 
-                    // Cluster marker for rviz
-                    RScanClusterMarkerArray->markers[i].header.frame_id = frameID;
-                    RScanClusterMarkerArray->markers[i].header.stamp = ts;
-                    RScanClusterMarkerArray->markers[i].ns = cluster_ns;
-                    RScanClusterMarkerArray->markers[i].id = i;
-                    RScanClusterMarkerArray->markers[i].action = visualization_msgs::Marker::ADD;
-                    RScanClusterMarkerArray->markers[i].type = visualization_msgs::Marker::CUBE;
-                    RScanClusterMarkerArray->markers[i].lifetime = ros::Duration(1);
-                    RScanClusterMarkerArray->markers[i].pose.position.x = temp[1];
-                    RScanClusterMarkerArray->markers[i].pose.position.y = -temp[0];
-                    RScanClusterMarkerArray->markers[i].pose.position.z = 0.0;
-                    RScanClusterMarkerArray->markers[i].pose.orientation.x = 0.0;
-                    RScanClusterMarkerArray->markers[i].pose.orientation.y = 0.0;
-                    RScanClusterMarkerArray->markers[i].pose.orientation.z = 0.0;
-                    RScanClusterMarkerArray->markers[i].pose.orientation.w = 1.0;
-                    RScanClusterMarkerArray->markers[i].scale.x = temp[3];
-                    RScanClusterMarkerArray->markers[i].scale.y = temp[2];
-                    RScanClusterMarkerArray->markers[i].scale.z = 0.01;
-                    RScanClusterMarkerArray->markers[i].color.a = 1.0;
+                    // Track (cluster) rviz message
+                    RScanClusterRviz->markers[i].header.frame_id = frameID;
+                    RScanClusterRviz->markers[i].header.stamp = ts;
+                    RScanClusterRviz->markers[i].ns = cluster_ns;
+                    RScanClusterRviz->markers[i].id = i;
+                    RScanClusterRviz->markers[i].action = visualization_msgs::Marker::ADD;
+                    RScanClusterRviz->markers[i].type = visualization_msgs::Marker::CUBE;
+                    RScanClusterRviz->markers[i].lifetime = ros::Duration(1);
+                    RScanClusterRviz->markers[i].pose.position.x = temp[1];
+                    RScanClusterRviz->markers[i].pose.position.y = -temp[0];
+                    RScanClusterRviz->markers[i].pose.position.z = 0.0;
+                    RScanClusterRviz->markers[i].pose.orientation.x = 0.0;
+                    RScanClusterRviz->markers[i].pose.orientation.y = 0.0;
+                    RScanClusterRviz->markers[i].pose.orientation.z = 0.0;
+                    RScanClusterRviz->markers[i].pose.orientation.w = 1.0;
+                    RScanClusterRviz->markers[i].scale.x = temp[3];
+                    RScanClusterRviz->markers[i].scale.y = temp[2];
+                    RScanClusterRviz->markers[i].scale.z = 0.01;
+                    RScanClusterRviz->markers[i].color.a = 1.0;
                     if (mmwData.header.subFrameNumber == 0)
                     {
-                        RScanClusterMarkerArray->markers[i].color.r = 0.0;
-                        RScanClusterMarkerArray->markers[i].color.g = 0.0;
-                        RScanClusterMarkerArray->markers[i].color.b = 1.0;
+                        RScanClusterRviz->markers[i].color.r = 0.0;
+                        RScanClusterRviz->markers[i].color.g = 0.0;
+                        RScanClusterRviz->markers[i].color.b = 1.0;
                     }
                     else
                     {
-                        RScanClusterMarkerArray->markers[i].color.r = 0.0;
-                        RScanClusterMarkerArray->markers[i].color.g = 0.0;
-                        RScanClusterMarkerArray->markers[i].color.b = 0.5;
+                        RScanClusterRviz->markers[i].color.r = 0.0;
+                        RScanClusterRviz->markers[i].color.g = 0.0;
+                        RScanClusterRviz->markers[i].color.b = 0.5;
                     }
-                    
-                    // Cluster message
-                    radar_scan_cluster.header.frame_id = frameID;
-                    radar_scan_cluster.header.stamp = ts;
-                    radar_scan_cluster.point_id = i;
-                    radar_scan_cluster.x = temp[1];
-                    radar_scan_cluster.y = -temp[0];
-                    radar_scan_cluster.x_size = temp[3];
-                    radar_scan_cluster.y_size = temp[2];
 
-                    if (mmwData.header.subFrameNumber == 1)
-                    {
-                        radar_scan_pub_3.publish(radar_scan_cluster);
-                    }
-                    else
-                    {
-                        radar_scan_pub_2.publish(radar_scan_cluster);
-                    }
+                    // Track (cluster) standard message
+                    RScanClusterStd->tracks[i].track_id = i;
+                    RScanClusterStd->tracks[i].track_shape.points.resize(4);
+                    RScanClusterStd->tracks[i].track_shape.points[0].x = temp[1] - temp[3] / 2;
+                    RScanClusterStd->tracks[i].track_shape.points[0].y = -temp[0] - temp[2] / 2;
+                    RScanClusterStd->tracks[i].track_shape.points[0].z = 0.0;
+                    RScanClusterStd->tracks[i].track_shape.points[1].x = temp[1] - temp[3] / 2;
+                    RScanClusterStd->tracks[i].track_shape.points[1].y = -temp[0] + temp[2] / 2;
+                    RScanClusterStd->tracks[i].track_shape.points[1].z = 0.0;
+                    RScanClusterStd->tracks[i].track_shape.points[2].x = temp[1] + temp[3] / 2;
+                    RScanClusterStd->tracks[i].track_shape.points[2].y = -temp[0] + temp[2] / 2;
+                    RScanClusterStd->tracks[i].track_shape.points[2].z = 0.0;
+                    RScanClusterStd->tracks[i].track_shape.points[3].x = temp[1] + temp[3] / 2;
+                    RScanClusterStd->tracks[i].track_shape.points[3].y = -temp[0] - temp[2] / 2;
+                    RScanClusterStd->tracks[i].track_shape.points[3].z = 0.0;
+                    RScanClusterStd->tracks[i].linear_velocity.x = 0.0;
+                    RScanClusterStd->tracks[i].linear_velocity.y = 0.0;
+                    RScanClusterStd->tracks[i].linear_velocity.z = 0.0;
 
                     i++;
                 }
@@ -1045,8 +1036,14 @@ void *DataUARTHandler::sortIncomingData( void )
                     track_ns = "track_1";
                 }
 
-                // Resize marker array
-                RScanTrackMarkerArray->markers.resize(mmwData.numTrackOut);
+                // Track (tracked object) rviz message
+                RScanTrackRviz->markers.resize(mmwData.numTrackOut);
+                
+                // Track (tracked object) standard message
+                RScanTrackStd->header.seq = 0;
+                RScanTrackStd->header.stamp = ros::Time::now();
+                RScanTrackStd->header.frame_id = frameID;
+                RScanTrackStd->tracks.resize(mmwData.numTrackOut);
                 
                 // Populate pointcloud
                 while( i < mmwData.numTrackOut ){
@@ -1090,57 +1087,56 @@ void *DataUARTHandler::sortIncomingData( void )
                         temp[j] = temp[j] * invXyzQFormat;
                     }
 
-                    // Track marker for rviz
-                    RScanTrackMarkerArray->markers[i].header.frame_id = frameID;
-                    RScanTrackMarkerArray->markers[i].header.stamp = ts;
-                    RScanTrackMarkerArray->markers[i].ns = track_ns;
-                    RScanTrackMarkerArray->markers[i].id = i;
-                    RScanTrackMarkerArray->markers[i].action = visualization_msgs::Marker::ADD;
-                    RScanTrackMarkerArray->markers[i].type = visualization_msgs::Marker::CUBE;
-                    RScanTrackMarkerArray->markers[i].lifetime = ros::Duration(1);
-                    RScanTrackMarkerArray->markers[i].pose.position.x = temp[1];
-                    RScanTrackMarkerArray->markers[i].pose.position.y = -temp[0];
-                    RScanTrackMarkerArray->markers[i].pose.position.z = 0.0;
-                    RScanTrackMarkerArray->markers[i].pose.orientation.x = 0.0;
-                    RScanTrackMarkerArray->markers[i].pose.orientation.y = 0.0;
-                    RScanTrackMarkerArray->markers[i].pose.orientation.z = 0.0;
-                    RScanTrackMarkerArray->markers[i].pose.orientation.w = 1.0;
-                    RScanTrackMarkerArray->markers[i].scale.x = temp[5];
-                    RScanTrackMarkerArray->markers[i].scale.y = temp[4];
-                    RScanTrackMarkerArray->markers[i].scale.z = 0.01;
-                    RScanTrackMarkerArray->markers[i].color.a = 1.0;
+                    // Track (tracked object) rviz message
+                    RScanTrackRviz->markers[i].header.frame_id = frameID;
+                    RScanTrackRviz->markers[i].header.stamp = ts;
+                    RScanTrackRviz->markers[i].ns = track_ns;
+                    RScanTrackRviz->markers[i].id = i;
+                    RScanTrackRviz->markers[i].action = visualization_msgs::Marker::ADD;
+                    RScanTrackRviz->markers[i].type = visualization_msgs::Marker::CUBE;
+                    RScanTrackRviz->markers[i].lifetime = ros::Duration(1);
+                    RScanTrackRviz->markers[i].pose.position.x = temp[1];
+                    RScanTrackRviz->markers[i].pose.position.y = -temp[0];
+                    RScanTrackRviz->markers[i].pose.position.z = 0.0;
+                    RScanTrackRviz->markers[i].pose.orientation.x = 0.0;
+                    RScanTrackRviz->markers[i].pose.orientation.y = 0.0;
+                    RScanTrackRviz->markers[i].pose.orientation.z = 0.0;
+                    RScanTrackRviz->markers[i].pose.orientation.w = 1.0;
+                    RScanTrackRviz->markers[i].scale.x = temp[5];
+                    RScanTrackRviz->markers[i].scale.y = temp[4];
+                    RScanTrackRviz->markers[i].scale.z = 0.01;
+                    RScanTrackRviz->markers[i].color.a = 1.0;
                     if (mmwData.header.subFrameNumber == 0)
                     {
-                        RScanTrackMarkerArray->markers[i].color.r = 0.0;
-                        RScanTrackMarkerArray->markers[i].color.g = 1.0;
-                        RScanTrackMarkerArray->markers[i].color.b = 0.0;
+                        RScanTrackRviz->markers[i].color.r = 0.0;
+                        RScanTrackRviz->markers[i].color.g = 1.0;
+                        RScanTrackRviz->markers[i].color.b = 0.0;
                     }
                     else
                     {
-                        RScanTrackMarkerArray->markers[i].color.r = 0.0;
-                        RScanTrackMarkerArray->markers[i].color.g = 0.5;
-                        RScanTrackMarkerArray->markers[i].color.b = 0.0;
+                        RScanTrackRviz->markers[i].color.r = 0.0;
+                        RScanTrackRviz->markers[i].color.g = 0.5;
+                        RScanTrackRviz->markers[i].color.b = 0.0;
                     }
-                    
-                    // Cluster message
-                    radar_scan_track.header.frame_id = frameID;
-                    radar_scan_track.header.stamp = ts;
-                    radar_scan_track.point_id = i;
-                    radar_scan_track.x = temp[1];
-                    radar_scan_track.y = -temp[0];
-                    radar_scan_track.x_vel = temp[3];
-                    radar_scan_track.y_vel = temp[2];
-                    radar_scan_track.x_size = temp[5];
-                    radar_scan_track.y_size = temp[4];
 
-                    if (mmwData.header.subFrameNumber == 1)
-                    {
-                        radar_scan_pub_5.publish(radar_scan_track);
-                    }
-                    else
-                    {
-                        radar_scan_pub_4.publish(radar_scan_track);
-                    }
+                    // Track (tracked object) standard message
+                    RScanTrackStd->tracks[i].track_id = i;
+                    RScanTrackStd->tracks[i].track_shape.points.resize(4);
+                    RScanTrackStd->tracks[i].track_shape.points[0].x = temp[1] - temp[5] / 2;
+                    RScanTrackStd->tracks[i].track_shape.points[0].y = -temp[0] - temp[4] / 2;
+                    RScanTrackStd->tracks[i].track_shape.points[0].z = 0.0;
+                    RScanTrackStd->tracks[i].track_shape.points[1].x = temp[1] - temp[5] / 2;
+                    RScanTrackStd->tracks[i].track_shape.points[1].y = -temp[0] + temp[4] / 2;
+                    RScanTrackStd->tracks[i].track_shape.points[1].z = 0.0;
+                    RScanTrackStd->tracks[i].track_shape.points[2].x = temp[1] + temp[5] / 2;
+                    RScanTrackStd->tracks[i].track_shape.points[2].y = -temp[0] + temp[4] / 2;
+                    RScanTrackStd->tracks[i].track_shape.points[2].z = 0.0;
+                    RScanTrackStd->tracks[i].track_shape.points[3].x = temp[1] + temp[5] / 2;
+                    RScanTrackStd->tracks[i].track_shape.points[3].y = -temp[0] - temp[4] / 2;
+                    RScanTrackStd->tracks[i].track_shape.points[3].z = 0.0;
+                    RScanTrackStd->tracks[i].linear_velocity.x = temp[3];
+                    RScanTrackStd->tracks[i].linear_velocity.y = temp[2];
+                    RScanTrackStd->tracks[i].linear_velocity.z = 0.0;
 
                     i++;
                 }
@@ -1176,71 +1172,86 @@ void *DataUARTHandler::sortIncomingData( void )
         
             if(tlvCount++ >= mmwData.header.numTLVs)  // Done parsing all received TLV sections
             {
-                // Publish detected object pointcloud
-                if (mmwData.numObjOut > 0)
+                if (radarBin == BIN_XWR18XX_MRR)
                 {
-                    j = 0;
-                    for (i = 0; i < mmwData.numObjOut; i++)
+                    // Publish detected object pointcloud
+                    if (mmwData.numObjOut > 0)
                     {
-                        // Keep point if elevation and azimuth angles are less than specified max values
-                        // (NOTE: The following calculations are done using ROS standard coordinate system axis definitions where X is forward and Y is left)
-                        if (((maxElevationAngleRatioSquared == -1) ||
-                             (((RScan->points[i].z * RScan->points[i].z) / (RScan->points[i].x * RScan->points[i].x +
-                                                                            RScan->points[i].y * RScan->points[i].y)
-                              ) < maxElevationAngleRatioSquared)
-                            ) &&
-                            ((maxAzimuthAngleRatio == -1) || (fabs(RScan->points[i].y / RScan->points[i].x) < maxAzimuthAngleRatio)) &&
-                                    (RScan->points[i].x != 0)
-                           )
+                        if (mmwData.header.subFrameNumber == 1)
                         {
-                            //ROS_INFO("Kept point");
-                            // copy: points[i] => points[j]
-                            memcpy( &RScan->points[j], &RScan->points[i], sizeof(RScan->points[i]));
-                            j++;
+                            DataUARTHandler_pub_1.publish(RScanObjectRviz);
+                            radar_scan_pub_1.publish(RScanObjectStd);
+                        }
+                        else
+                        {
+                            DataUARTHandler_pub.publish(RScanObjectRviz);
+                            radar_scan_pub.publish(RScanObjectStd);
                         }
                     }
-                    mmwData.numObjOut = j;  // update number of objects as some points may have been removed
 
-                    // Resize point cloud since some points may have been removed
-                    RScan->width = mmwData.numObjOut;
-                    RScan->points.resize(RScan->width * RScan->height);
-                    
-                    //ROS_INFO("mmwData.numObjOut after = %d", mmwData.numObjOut);
-                    //ROS_INFO("DataUARTHandler Sort Thread: number of obj = %d", mmwData.numObjOut );
-                    
-                    if ((radarBin == BIN_XWR18XX_MRR) && (mmwData.header.subFrameNumber == 1))
+                    // Publish detected cluster marker array
+                    if (mmwData.numClusterOut > 0)
                     {
-                        DataUARTHandler_pub_1.publish(RScan);
+                        if (mmwData.header.subFrameNumber == 1)
+                        {
+                            DataUARTHandler_pub_3.publish(RScanClusterRviz);
+                            radar_scan_pub_3.publish(RScanClusterStd);
+                        }
+                        else
+                        {
+                            // MRR clusters ignored
+                        }
                     }
-                    else
+
+                    // Publish detected track marker array
+                    if (mmwData.numTrackOut > 0)
                     {
+                        if (mmwData.header.subFrameNumber == 1)
+                        {
+                            // USRR tracked objects ignored
+                        }
+                        else
+                        {
+                            DataUARTHandler_pub_2.publish(RScanTrackRviz);
+                            radar_scan_pub_2.publish(RScanTrackStd);
+                        }
+                    }
+                }
+                else
+                {
+                    // Publish detected object pointcloud
+                    if (mmwData.numObjOut > 0)
+                    {
+                        j = 0;
+                        for (i = 0; i < mmwData.numObjOut; i++)
+                        {
+                            // Keep point if elevation and azimuth angles are less than specified max values
+                            // (NOTE: The following calculations are done using ROS standard coordinate system axis definitions where X is forward and Y is left)
+                            if (((maxElevationAngleRatioSquared == -1) ||
+                                (((RScan->points[i].z * RScan->points[i].z) / (RScan->points[i].x * RScan->points[i].x +
+                                                                                RScan->points[i].y * RScan->points[i].y)
+                                ) < maxElevationAngleRatioSquared)
+                                ) &&
+                                ((maxAzimuthAngleRatio == -1) || (fabs(RScan->points[i].y / RScan->points[i].x) < maxAzimuthAngleRatio)) &&
+                                        (RScan->points[i].x != 0)
+                            )
+                            {
+                                //ROS_INFO("Kept point");
+                                // copy: points[i] => points[j]
+                                memcpy( &RScan->points[j], &RScan->points[i], sizeof(RScan->points[i]));
+                                j++;
+                            }
+                        }
+                        mmwData.numObjOut = j;  // update number of objects as some points may have been removed
+
+                        // Resize point cloud since some points may have been removed
+                        RScan->width = mmwData.numObjOut;
+                        RScan->points.resize(RScan->width * RScan->height);
+                        
+                        //ROS_INFO("mmwData.numObjOut after = %d", mmwData.numObjOut);
+                        //ROS_INFO("DataUARTHandler Sort Thread: number of obj = %d", mmwData.numObjOut );
+                        
                         DataUARTHandler_pub.publish(RScan);
-                    }
-                }
-
-                // Publish detected cluster marker array
-                if ((radarBin == BIN_XWR18XX_MRR) && (mmwData.numClusterOut > 0))
-                {
-                    if (mmwData.header.subFrameNumber == 1)
-                    {
-                        DataUARTHandler_pub_3.publish(RScanClusterMarkerArray);
-                    }
-                    else
-                    {
-                        DataUARTHandler_pub_2.publish(RScanClusterMarkerArray);
-                    }
-                }
-
-                // Publish detected track marker array
-                if ((radarBin == BIN_XWR18XX_MRR) && (mmwData.numTrackOut > 0))
-                {
-                    if (mmwData.header.subFrameNumber == 1)
-                    {
-                        DataUARTHandler_pub_5.publish(RScanTrackMarkerArray);
-                    }
-                    else
-                    {
-                        DataUARTHandler_pub_4.publish(RScanTrackMarkerArray);
                     }
                 }
 

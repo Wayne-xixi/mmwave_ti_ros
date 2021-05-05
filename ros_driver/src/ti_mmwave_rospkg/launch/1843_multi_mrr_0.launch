@@ -16,6 +16,14 @@
     <param name="max_allowed_azimuth_angle_deg" value="$(arg max_allowed_azimuth_angle_deg)"   />
     <param name="frame_id" value="/ti_mmwave_0"/>
     <param name="radar_bin" value="xwr18xx_mrr_demo.bin"/>
+    <remap from="/ti_mmwave/radar_detection_mrr_rviz" to="/ti_mmwave/radar_detection_mrr_rviz_0"/>
+    <remap from="/ti_mmwave/radar_detection_mrr" to="/ti_mmwave/radar_detection_mrr_0"/>
+    <remap from="/ti_mmwave/radar_detection_usrr_rviz" to="/ti_mmwave/radar_detection_usrr_rviz_0"/>
+    <remap from="/ti_mmwave/radar_detection_usrr" to="/ti_mmwave/radar_detection_usrr_0"/>
+    <remap from="/ti_mmwave/radar_track_mrr_rviz" to="/ti_mmwave/radar_track_mrr_rviz_0"/>
+    <remap from="/ti_mmwave/radar_track_mrr" to="/ti_mmwave/radar_track_mrr_0"/>
+    <remap from="/ti_mmwave/radar_track_usrr_rviz" to="/ti_mmwave/radar_track_usrr_rviz_0"/>
+    <remap from="/ti_mmwave/radar_track_usrr" to="/ti_mmwave/radar_track_usrr_0"/>
   </node>
 
   <!-- mmWaveQuickConfig node (terminates after configuring mmWave sensor) -->
