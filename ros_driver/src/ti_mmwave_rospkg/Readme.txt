@@ -72,3 +72,4 @@ Description:
 - The following topics are used by the driver to send data to rviz:
     - /ti_mmwave/radar_detection_mrr_rviz_x and /ti_mmwave/radar_detection_usrr_rviz_x: Point cloud of detected objects in MRR and USRR modes.
     - /ti_mmwave/radar_track_mrr_rviz_x and /ti_mmwave/radar_track_usrr_rviz_x: Marker array of tracks in MRR and USRR modes.
+- Angle of vision can be adjusted changing arguments max_allowed_elevation_angle_deg and max_allowed_azimuth_angle_deg in files mmwave_ti_ros/ros_driver/src/ti_mmwave_rospkg/launch/1843_multi_mrr_0.launch and mmwave_ti_ros/ros_driver/src/ti_mmwave_rospkg/launch/1843_multi_mrr_1.launch. The value is interpreted as ±x º.

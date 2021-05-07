@@ -369,6 +369,14 @@ void *DataUARTHandler::sortIncomingData( void )
     int j = 0;
     float maxElevationAngleRatioSquared;
     float maxAzimuthAngleRatio;
+            
+    // Calculate ratios for max desired elevation and azimuth angles
+    if ((maxAllowedElevationAngleDeg >= 0) && (maxAllowedElevationAngleDeg < 90)) {
+        maxElevationAngleRatioSquared = tan(maxAllowedElevationAngleDeg * M_PI / 180.0);
+        maxElevationAngleRatioSquared = maxElevationAngleRatioSquared * maxElevationAngleRatioSquared;
+    } else maxElevationAngleRatioSquared = -1;
+    if ((maxAllowedAzimuthAngleDeg >= 0) && (maxAllowedAzimuthAngleDeg < 90)) maxAzimuthAngleRatio = tan(maxAllowedAzimuthAngleDeg * M_PI / 180.0);
+    else maxAzimuthAngleRatio = -1;
 
     boost::shared_ptr<pcl::PointCloud<pcl::PointXYZI>> RScan(new pcl::PointCloud<pcl::PointXYZI>);
     ti_mmwave_rospkg::RadarScan radarscan;
@@ -507,14 +515,6 @@ void *DataUARTHandler::sortIncomingData( void )
             RScan->width = mmwData.numObjOut;
             RScan->is_dense = 1;
             RScan->points.resize(RScan->width * RScan->height);
-            
-            // Calculate ratios for max desired elevation and azimuth angles
-            if ((maxAllowedElevationAngleDeg >= 0) && (maxAllowedElevationAngleDeg < 90)) {
-                maxElevationAngleRatioSquared = tan(maxAllowedElevationAngleDeg * M_PI / 180.0);
-                maxElevationAngleRatioSquared = maxElevationAngleRatioSquared * maxElevationAngleRatioSquared;
-            } else maxElevationAngleRatioSquared = -1;
-            if ((maxAllowedAzimuthAngleDeg >= 0) && (maxAllowedAzimuthAngleDeg < 90)) maxAzimuthAngleRatio = tan(maxAllowedAzimuthAngleDeg * M_PI / 180.0);
-            else maxAzimuthAngleRatio = -1;
 
             //ROS_INFO("maxElevationAngleRatioSquared = %f", maxElevationAngleRatioSquared);
             //ROS_INFO("maxAzimuthAngleRatio = %f", maxAzimuthAngleRatio);
@@ -760,6 +760,7 @@ void *DataUARTHandler::sortIncomingData( void )
                 // CHECK_TLV_TYPE code has already read tlvType and tlvLen
 
                 i = 0;
+                j = 0;
 
                 //get number of objects
                 memcpy( &mmwData.numObjOut, &currentBufp->at(currentDatap), sizeof(mmwData.numObjOut));
@@ -822,9 +823,9 @@ void *DataUARTHandler::sortIncomingData( void )
                     temp[3] = (float) mmwData.objOut.dopplerIdx;
 
                     // Convert from oneQformat to float
-                    for (int j = 0; j < 4; j++) {
-                        if (temp[j] > 32767) temp[j] -= 65536;
-                        temp[j] = temp[j] * invXyzQFormat;
+                    for (int k = 0; k < 4; k++) {
+                        if (temp[k] > 32767) temp[k] -= 65536;
+                        temp[k] = temp[k] * invXyzQFormat;
                     }
 
                     // Range
@@ -850,23 +851,41 @@ void *DataUARTHandler::sortIncomingData( void )
                         temp[8] = (-1.0 * temp[3]) * std::sin(angle);
                     }
 
-                    // Detection (object) rviz message
-                    RScanObjectRviz->points[i].x = temp[1];   // ROS standard coordinate system X-axis is forward which is the mmWave sensor Y-axis
-                    RScanObjectRviz->points[i].y = -temp[0];  // ROS standard coordinate system Y-axis is left which is the mmWave sensor -(X-axis)
-                    RScanObjectRviz->points[i].z = temp[2];   // ROS standard coordinate system Z-axis is up which is the same as mmWave sensor Z-axis
-                    RScanObjectRviz->points[i].intensity = temp[5];
+                    if (((maxElevationAngleRatioSquared == -1) ||
+                         (((temp[2] * temp[2]) / (temp[1] * temp[1] + (-temp[0]) * (-temp[0]))) < maxElevationAngleRatioSquared)) &&
+                        ((maxAzimuthAngleRatio == -1) ||
+                         (fabs(temp[0] / temp[1]) < maxAzimuthAngleRatio)) &&
+                        (temp[1] != 0))
+                    {
+                        // Detection (object) rviz message
+                        RScanObjectRviz->points[j].x = temp[1];   // ROS standard coordinate system X-axis is forward which is the mmWave sensor Y-axis
+                        RScanObjectRviz->points[j].y = -temp[0];  // ROS standard coordinate system Y-axis is left which is the mmWave sensor -(X-axis)
+                        RScanObjectRviz->points[j].z = temp[2];   // ROS standard coordinate system Z-axis is up which is the same as mmWave sensor Z-axis
+                        RScanObjectRviz->points[j].intensity = temp[5];
 
-                    // Detection (object) standard message
-                    RScanObjectStd->detections[i].detection_id = i;
-                    RScanObjectStd->detections[i].position.x = temp[1];
-                    RScanObjectStd->detections[i].position.y = -temp[0];
-                    RScanObjectStd->detections[i].position.z = 0.0;
-                    RScanObjectStd->detections[i].velocity.x = temp[7];
-                    RScanObjectStd->detections[i].velocity.y = temp[8];
-                    RScanObjectStd->detections[i].velocity.z = 0.0;
-                    RScanObjectStd->detections[i].amplitude = temp[5];
+                        // Detection (object) standard message
+                        RScanObjectStd->detections[j].detection_id = i;
+                        RScanObjectStd->detections[j].position.x = temp[1];
+                        RScanObjectStd->detections[j].position.y = -temp[0];
+                        RScanObjectStd->detections[j].position.z = 0.0;
+                        RScanObjectStd->detections[j].velocity.x = temp[7];
+                        RScanObjectStd->detections[j].velocity.y = temp[8];
+                        RScanObjectStd->detections[j].velocity.z = 0.0;
+                        RScanObjectStd->detections[j].amplitude = temp[5];
+
+                        j++;
+                    }
 
                     i++;
+                }
+
+                // Resize arrays if necessary
+                if (j < mmwData.numObjOut)
+                {
+                    mmwData.numObjOut = j;
+                    RScanObjectRviz->width = mmwData.numObjOut;
+                    RScanObjectRviz->points.resize(mmwData.numObjOut);
+                    RScanObjectStd->detections.resize(mmwData.numObjOut);
                 }
 
                 sorterState = CHECK_TLV_TYPE;
@@ -881,6 +900,7 @@ void *DataUARTHandler::sortIncomingData( void )
                 // CHECK_TLV_TYPE code has already read tlvType and tlvLen
 
                 i = 0;
+                j = 0;
 
                 //get number of objects
                 memcpy( &mmwData.numClusterOut, &currentBufp->at(currentDatap), sizeof(mmwData.numClusterOut));
@@ -941,63 +961,78 @@ void *DataUARTHandler::sortIncomingData( void )
                     temp[2] = (float) mmwData.clusterOut.xSize;
                     temp[3] = (float) mmwData.clusterOut.ySize;
 
-                    for (int j = 0; j < 4; j++) {
-                        if (j < 2 && temp[j] > 32767) temp[j] -= 65536;
-                        temp[j] = temp[j] * invXyzQFormat;
+                    for (int k = 0; k < 4; k++) {
+                        if (k < 2 && temp[k] > 32767) temp[k] -= 65536;
+                        temp[k] = temp[k] * invXyzQFormat;
                     }
 
-                    // Track (cluster) rviz message
-                    RScanClusterRviz->markers[i].header.frame_id = frameID;
-                    RScanClusterRviz->markers[i].header.stamp = ts;
-                    RScanClusterRviz->markers[i].ns = cluster_ns;
-                    RScanClusterRviz->markers[i].id = i;
-                    RScanClusterRviz->markers[i].action = visualization_msgs::Marker::ADD;
-                    RScanClusterRviz->markers[i].type = visualization_msgs::Marker::CUBE;
-                    RScanClusterRviz->markers[i].lifetime = ros::Duration(1);
-                    RScanClusterRviz->markers[i].pose.position.x = temp[1];
-                    RScanClusterRviz->markers[i].pose.position.y = -temp[0];
-                    RScanClusterRviz->markers[i].pose.position.z = 0.0;
-                    RScanClusterRviz->markers[i].pose.orientation.x = 0.0;
-                    RScanClusterRviz->markers[i].pose.orientation.y = 0.0;
-                    RScanClusterRviz->markers[i].pose.orientation.z = 0.0;
-                    RScanClusterRviz->markers[i].pose.orientation.w = 1.0;
-                    RScanClusterRviz->markers[i].scale.x = temp[3];
-                    RScanClusterRviz->markers[i].scale.y = temp[2];
-                    RScanClusterRviz->markers[i].scale.z = 0.01;
-                    RScanClusterRviz->markers[i].color.a = 1.0;
-                    if (mmwData.header.subFrameNumber == 0)
+                    if (((maxAzimuthAngleRatio == -1) ||
+                         (fabs(temp[0] / temp[1]) < maxAzimuthAngleRatio)) &&
+                        (temp[1] != 0))
                     {
-                        RScanClusterRviz->markers[i].color.r = 0.0;
-                        RScanClusterRviz->markers[i].color.g = 0.0;
-                        RScanClusterRviz->markers[i].color.b = 1.0;
-                    }
-                    else
-                    {
-                        RScanClusterRviz->markers[i].color.r = 0.0;
-                        RScanClusterRviz->markers[i].color.g = 0.0;
-                        RScanClusterRviz->markers[i].color.b = 0.5;
-                    }
+                        // Track (cluster) rviz message
+                        RScanClusterRviz->markers[j].header.frame_id = frameID;
+                        RScanClusterRviz->markers[j].header.stamp = ts;
+                        RScanClusterRviz->markers[j].ns = cluster_ns;
+                        RScanClusterRviz->markers[j].id = i;
+                        RScanClusterRviz->markers[j].action = visualization_msgs::Marker::ADD;
+                        RScanClusterRviz->markers[j].type = visualization_msgs::Marker::CUBE;
+                        RScanClusterRviz->markers[j].lifetime = ros::Duration(1);
+                        RScanClusterRviz->markers[j].pose.position.x = temp[1];
+                        RScanClusterRviz->markers[j].pose.position.y = -temp[0];
+                        RScanClusterRviz->markers[j].pose.position.z = 0.0;
+                        RScanClusterRviz->markers[j].pose.orientation.x = 0.0;
+                        RScanClusterRviz->markers[j].pose.orientation.y = 0.0;
+                        RScanClusterRviz->markers[j].pose.orientation.z = 0.0;
+                        RScanClusterRviz->markers[j].pose.orientation.w = 1.0;
+                        RScanClusterRviz->markers[j].scale.x = temp[3];
+                        RScanClusterRviz->markers[j].scale.y = temp[2];
+                        RScanClusterRviz->markers[j].scale.z = 0.01;
+                        RScanClusterRviz->markers[j].color.a = 1.0;
+                        if (mmwData.header.subFrameNumber == 0)
+                        {
+                            RScanClusterRviz->markers[j].color.r = 0.0;
+                            RScanClusterRviz->markers[j].color.g = 0.0;
+                            RScanClusterRviz->markers[j].color.b = 1.0;
+                        }
+                        else
+                        {
+                            RScanClusterRviz->markers[j].color.r = 0.0;
+                            RScanClusterRviz->markers[j].color.g = 0.0;
+                            RScanClusterRviz->markers[j].color.b = 0.5;
+                        }
 
-                    // Track (cluster) standard message
-                    RScanClusterStd->tracks[i].track_id = i;
-                    RScanClusterStd->tracks[i].track_shape.points.resize(4);
-                    RScanClusterStd->tracks[i].track_shape.points[0].x = temp[1] - temp[3] / 2;
-                    RScanClusterStd->tracks[i].track_shape.points[0].y = -temp[0] - temp[2] / 2;
-                    RScanClusterStd->tracks[i].track_shape.points[0].z = 0.0;
-                    RScanClusterStd->tracks[i].track_shape.points[1].x = temp[1] - temp[3] / 2;
-                    RScanClusterStd->tracks[i].track_shape.points[1].y = -temp[0] + temp[2] / 2;
-                    RScanClusterStd->tracks[i].track_shape.points[1].z = 0.0;
-                    RScanClusterStd->tracks[i].track_shape.points[2].x = temp[1] + temp[3] / 2;
-                    RScanClusterStd->tracks[i].track_shape.points[2].y = -temp[0] + temp[2] / 2;
-                    RScanClusterStd->tracks[i].track_shape.points[2].z = 0.0;
-                    RScanClusterStd->tracks[i].track_shape.points[3].x = temp[1] + temp[3] / 2;
-                    RScanClusterStd->tracks[i].track_shape.points[3].y = -temp[0] - temp[2] / 2;
-                    RScanClusterStd->tracks[i].track_shape.points[3].z = 0.0;
-                    RScanClusterStd->tracks[i].linear_velocity.x = 0.0;
-                    RScanClusterStd->tracks[i].linear_velocity.y = 0.0;
-                    RScanClusterStd->tracks[i].linear_velocity.z = 0.0;
+                        // Track (cluster) standard message
+                        RScanClusterStd->tracks[j].track_id = i;
+                        RScanClusterStd->tracks[j].track_shape.points.resize(4);
+                        RScanClusterStd->tracks[j].track_shape.points[0].x = temp[1] - temp[3] / 2;
+                        RScanClusterStd->tracks[j].track_shape.points[0].y = -temp[0] - temp[2] / 2;
+                        RScanClusterStd->tracks[j].track_shape.points[0].z = 0.0;
+                        RScanClusterStd->tracks[j].track_shape.points[1].x = temp[1] - temp[3] / 2;
+                        RScanClusterStd->tracks[j].track_shape.points[1].y = -temp[0] + temp[2] / 2;
+                        RScanClusterStd->tracks[j].track_shape.points[1].z = 0.0;
+                        RScanClusterStd->tracks[j].track_shape.points[2].x = temp[1] + temp[3] / 2;
+                        RScanClusterStd->tracks[j].track_shape.points[2].y = -temp[0] + temp[2] / 2;
+                        RScanClusterStd->tracks[j].track_shape.points[2].z = 0.0;
+                        RScanClusterStd->tracks[j].track_shape.points[3].x = temp[1] + temp[3] / 2;
+                        RScanClusterStd->tracks[j].track_shape.points[3].y = -temp[0] - temp[2] / 2;
+                        RScanClusterStd->tracks[j].track_shape.points[3].z = 0.0;
+                        RScanClusterStd->tracks[j].linear_velocity.x = 0.0;
+                        RScanClusterStd->tracks[j].linear_velocity.y = 0.0;
+                        RScanClusterStd->tracks[j].linear_velocity.z = 0.0;
+
+                        j++;
+                    }
 
                     i++;
+                }
+
+                // Resize arrays if necessary
+                if (j < mmwData.numClusterOut)
+                {
+                    mmwData.numClusterOut = j;
+                    RScanClusterRviz->markers.resize(mmwData.numClusterOut);
+                    RScanClusterStd->tracks.resize(mmwData.numClusterOut);
                 }
 
                 sorterState = CHECK_TLV_TYPE;
@@ -1012,6 +1047,7 @@ void *DataUARTHandler::sortIncomingData( void )
                 // CHECK_TLV_TYPE code has already read tlvType and tlvLen
 
                 i = 0;
+                j = 0;
 
                 //get number of objects
                 memcpy( &mmwData.numTrackOut, &currentBufp->at(currentDatap), sizeof(mmwData.numTrackOut));
@@ -1082,63 +1118,78 @@ void *DataUARTHandler::sortIncomingData( void )
                     temp[4] = (float) mmwData.trackOut.xSize;
                     temp[5] = (float) mmwData.trackOut.ySize;
 
-                    for (int j = 0; j < 6; j++) {
-                        if (j < 4 && temp[j] > 32767) temp[j] -= 65536;
-                        temp[j] = temp[j] * invXyzQFormat;
+                    for (int k = 0; k < 6; k++) {
+                        if (k < 4 && temp[k] > 32767) temp[k] -= 65536;
+                        temp[k] = temp[k] * invXyzQFormat;
                     }
-
-                    // Track (tracked object) rviz message
-                    RScanTrackRviz->markers[i].header.frame_id = frameID;
-                    RScanTrackRviz->markers[i].header.stamp = ts;
-                    RScanTrackRviz->markers[i].ns = track_ns;
-                    RScanTrackRviz->markers[i].id = i;
-                    RScanTrackRviz->markers[i].action = visualization_msgs::Marker::ADD;
-                    RScanTrackRviz->markers[i].type = visualization_msgs::Marker::CUBE;
-                    RScanTrackRviz->markers[i].lifetime = ros::Duration(1);
-                    RScanTrackRviz->markers[i].pose.position.x = temp[1];
-                    RScanTrackRviz->markers[i].pose.position.y = -temp[0];
-                    RScanTrackRviz->markers[i].pose.position.z = 0.0;
-                    RScanTrackRviz->markers[i].pose.orientation.x = 0.0;
-                    RScanTrackRviz->markers[i].pose.orientation.y = 0.0;
-                    RScanTrackRviz->markers[i].pose.orientation.z = 0.0;
-                    RScanTrackRviz->markers[i].pose.orientation.w = 1.0;
-                    RScanTrackRviz->markers[i].scale.x = temp[5];
-                    RScanTrackRviz->markers[i].scale.y = temp[4];
-                    RScanTrackRviz->markers[i].scale.z = 0.01;
-                    RScanTrackRviz->markers[i].color.a = 1.0;
-                    if (mmwData.header.subFrameNumber == 0)
+                    
+                    if (((maxAzimuthAngleRatio == -1) ||
+                         (fabs(temp[0] / temp[1]) < maxAzimuthAngleRatio)) &&
+                        (temp[1] != 0))
                     {
-                        RScanTrackRviz->markers[i].color.r = 0.0;
-                        RScanTrackRviz->markers[i].color.g = 1.0;
-                        RScanTrackRviz->markers[i].color.b = 0.0;
-                    }
-                    else
-                    {
-                        RScanTrackRviz->markers[i].color.r = 0.0;
-                        RScanTrackRviz->markers[i].color.g = 0.5;
-                        RScanTrackRviz->markers[i].color.b = 0.0;
-                    }
+                        // Track (tracked object) rviz message
+                        RScanTrackRviz->markers[j].header.frame_id = frameID;
+                        RScanTrackRviz->markers[j].header.stamp = ts;
+                        RScanTrackRviz->markers[j].ns = track_ns;
+                        RScanTrackRviz->markers[j].id = i;
+                        RScanTrackRviz->markers[j].action = visualization_msgs::Marker::ADD;
+                        RScanTrackRviz->markers[j].type = visualization_msgs::Marker::CUBE;
+                        RScanTrackRviz->markers[j].lifetime = ros::Duration(1);
+                        RScanTrackRviz->markers[j].pose.position.x = temp[1];
+                        RScanTrackRviz->markers[j].pose.position.y = -temp[0];
+                        RScanTrackRviz->markers[j].pose.position.z = 0.0;
+                        RScanTrackRviz->markers[j].pose.orientation.x = 0.0;
+                        RScanTrackRviz->markers[j].pose.orientation.y = 0.0;
+                        RScanTrackRviz->markers[j].pose.orientation.z = 0.0;
+                        RScanTrackRviz->markers[j].pose.orientation.w = 1.0;
+                        RScanTrackRviz->markers[j].scale.x = temp[5];
+                        RScanTrackRviz->markers[j].scale.y = temp[4];
+                        RScanTrackRviz->markers[j].scale.z = 0.01;
+                        RScanTrackRviz->markers[j].color.a = 1.0;
+                        if (mmwData.header.subFrameNumber == 0)
+                        {
+                            RScanTrackRviz->markers[j].color.r = 0.0;
+                            RScanTrackRviz->markers[j].color.g = 1.0;
+                            RScanTrackRviz->markers[j].color.b = 0.0;
+                        }
+                        else
+                        {
+                            RScanTrackRviz->markers[j].color.r = 0.0;
+                            RScanTrackRviz->markers[j].color.g = 0.5;
+                            RScanTrackRviz->markers[j].color.b = 0.0;
+                        }
 
-                    // Track (tracked object) standard message
-                    RScanTrackStd->tracks[i].track_id = i;
-                    RScanTrackStd->tracks[i].track_shape.points.resize(4);
-                    RScanTrackStd->tracks[i].track_shape.points[0].x = temp[1] - temp[5] / 2;
-                    RScanTrackStd->tracks[i].track_shape.points[0].y = -temp[0] - temp[4] / 2;
-                    RScanTrackStd->tracks[i].track_shape.points[0].z = 0.0;
-                    RScanTrackStd->tracks[i].track_shape.points[1].x = temp[1] - temp[5] / 2;
-                    RScanTrackStd->tracks[i].track_shape.points[1].y = -temp[0] + temp[4] / 2;
-                    RScanTrackStd->tracks[i].track_shape.points[1].z = 0.0;
-                    RScanTrackStd->tracks[i].track_shape.points[2].x = temp[1] + temp[5] / 2;
-                    RScanTrackStd->tracks[i].track_shape.points[2].y = -temp[0] + temp[4] / 2;
-                    RScanTrackStd->tracks[i].track_shape.points[2].z = 0.0;
-                    RScanTrackStd->tracks[i].track_shape.points[3].x = temp[1] + temp[5] / 2;
-                    RScanTrackStd->tracks[i].track_shape.points[3].y = -temp[0] - temp[4] / 2;
-                    RScanTrackStd->tracks[i].track_shape.points[3].z = 0.0;
-                    RScanTrackStd->tracks[i].linear_velocity.x = temp[3];
-                    RScanTrackStd->tracks[i].linear_velocity.y = temp[2];
-                    RScanTrackStd->tracks[i].linear_velocity.z = 0.0;
+                        // Track (tracked object) standard message
+                        RScanTrackStd->tracks[j].track_id = i;
+                        RScanTrackStd->tracks[j].track_shape.points.resize(4);
+                        RScanTrackStd->tracks[j].track_shape.points[0].x = temp[1] - temp[5] / 2;
+                        RScanTrackStd->tracks[j].track_shape.points[0].y = -temp[0] - temp[4] / 2;
+                        RScanTrackStd->tracks[j].track_shape.points[0].z = 0.0;
+                        RScanTrackStd->tracks[j].track_shape.points[1].x = temp[1] - temp[5] / 2;
+                        RScanTrackStd->tracks[j].track_shape.points[1].y = -temp[0] + temp[4] / 2;
+                        RScanTrackStd->tracks[j].track_shape.points[1].z = 0.0;
+                        RScanTrackStd->tracks[j].track_shape.points[2].x = temp[1] + temp[5] / 2;
+                        RScanTrackStd->tracks[j].track_shape.points[2].y = -temp[0] + temp[4] / 2;
+                        RScanTrackStd->tracks[j].track_shape.points[2].z = 0.0;
+                        RScanTrackStd->tracks[j].track_shape.points[3].x = temp[1] + temp[5] / 2;
+                        RScanTrackStd->tracks[j].track_shape.points[3].y = -temp[0] - temp[4] / 2;
+                        RScanTrackStd->tracks[j].track_shape.points[3].z = 0.0;
+                        RScanTrackStd->tracks[j].linear_velocity.x = temp[3];
+                        RScanTrackStd->tracks[j].linear_velocity.y = temp[2];
+                        RScanTrackStd->tracks[j].linear_velocity.z = 0.0;
+
+                        j++;
+                    }
 
                     i++;
+                }
+
+                // Resize arrays if necessary
+                if (j < mmwData.numTrackOut)
+                {
+                    mmwData.numTrackOut = j;
+                    RScanTrackRviz->markers.resize(mmwData.numTrackOut);
+                    RScanTrackStd->tracks.resize(mmwData.numTrackOut);
                 }
 
                 sorterState = CHECK_TLV_TYPE;
